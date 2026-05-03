@@ -1,0 +1,27 @@
+# Dependencies (величезна папка, відновлюється з npm install)
+node_modules/
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# Конфіг з API-ключем
+config.js
+
+# OS файли
+.DS_Store
+Thumbs.db
+
+# Логи
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# IDE
+.vscode/
+.idea/
+
+# Оригінальні PNG (у тебе в cities_source/, мастер-копії великі)
+assets/cities_source/
