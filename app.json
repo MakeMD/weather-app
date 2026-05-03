@@ -2,6 +2,22 @@
   "expo": {
     "name": "weather-app",
     "slug": "weather-app",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Додаток використовує ваше місцезнаходження, щоб показати погоду в найближчому місті.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.makemd.weatherapp"
+    },
+    "android": {
+      "package": "com.makemd.weatherapp",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    }
+  },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,24 +28,30 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "ios": {
-  "supportsTablet": true,
-  "infoPlist": {
-    "NSLocationWhenInUseUsageDescription": "Додаток використовує ваше місцезнаходження, щоб показати погоду в найближчому місті."
-  }
-},
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.makemd.weatherapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "80a5fe8a-0618-4e5b-86d2-02a787681105"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/80a5fe8a-0618-4e5b-86d2-02a787681105"
+    }
   }
 }
