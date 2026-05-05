@@ -1,70 +1,81 @@
+import { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { getCityName } from '../utils/cityName';
 import { scaleFont } from '../utils/responsive';
-import { colors, fonts } from '../styles/theme';
+import { fonts } from '../styles/theme';
+import { useTheme } from '../contexts/ThemeContext';
 
-export default function CityHeader({ cityName, isDefault, showArrows, onPrevious, onNext, onSettings }) {
+export default function CityHeader({
+  city,
+  language,
+  isDefault,
+  showArrows,
+  onPrevious,
+  onNext,
+  onSettings,
+}) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const displayName = getCityName(city, language);
+
   return (
-    <View style={styles.header}>
-      <View style={styles.cityNavGroup}>
+    <View style={styles.container}>
+      <View style={styles.left} />
+
+      <View style={styles.center}>
         {showArrows && (
-          <TouchableOpacity onPress={onPrevious} hitSlop={20}>
+          <TouchableOpacity onPress={onPrevious} hitSlop={12}>
             <Text style={styles.arrow}>‹</Text>
           </TouchableOpacity>
         )}
-
-        <Text style={styles.city} numberOfLines={1} adjustsFontSizeToFit>
-          {cityName}
+        <Text style={styles.name} numberOfLines={1}>
+          {displayName} {isDefault && <Text style={styles.pin}>📍</Text>}
         </Text>
-
-        {isDefault && <Text style={styles.locationPin}>📍</Text>}
-
         {showArrows && (
-          <TouchableOpacity onPress={onNext} hitSlop={20}>
+          <TouchableOpacity onPress={onNext} hitSlop={12}>
             <Text style={styles.arrow}>›</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <TouchableOpacity onPress={onSettings} hitSlop={15} style={styles.settingsButton}>
-        <Text style={styles.settingsIcon}>⚙️</Text>
-      </TouchableOpacity>
+      <View style={styles.right}>
+        <TouchableOpacity onPress={onSettings} hitSlop={12}>
+          <Text style={styles.icon}>⚙️</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    minHeight: 50,
-  },
-  cityNavGroup: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 8,
-  },
-  arrow: {
-    fontSize: scaleFont(38),
-    color: colors.text,
-    fontFamily: fonts.bold,
-    lineHeight: scaleFont(44),
-  },
-  city: {
-    fontSize: scaleFont(26),
-    color: colors.text,
-    fontFamily: fonts.extraBold,
-    letterSpacing: 2,
-    flexShrink: 1,
-  },
-  locationPin: { fontSize: scaleFont(16) },
-  settingsButton: {
-    position: 'absolute',
-    right: 0,
-    padding: 4,
-  },
-  settingsIcon: { fontSize: scaleFont(22) },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    left: { width: 40 },
+    right: { width: 40, alignItems: 'flex-end' },
+    center: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    icon: { fontSize: scaleFont(20) },
+    arrow: {
+      fontSize: scaleFont(28),
+      color: colors.text,
+      fontFamily: fonts.bold,
+      paddingHorizontal: 8,
+    },
+    name: {
+      fontSize: scaleFont(20),
+      color: colors.text,
+      fontFamily: fonts.extraBold,
+      letterSpacing: 1,
+    },
+    pin: { fontSize: scaleFont(16) },
+  });

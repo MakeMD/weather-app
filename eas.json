@@ -3,12 +3,21 @@
     "version": ">= 5.0.0"
   },
   "build": {
-    "preview": {
+    "development": {
+      "developmentClient": true,
       "distribution": "internal",
       "ios": {
         "simulator": false
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
       },
-      "channel": "preview"
+      "ios": {
+        "simulator": false
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, TextInput,
   ActivityIndicator, FlatList, Alert, KeyboardAvoidingView, Platform, StyleSheet,
@@ -9,20 +9,28 @@ import { ukrainianCities } from '../data/cities';
 import { searchCitiesWorldwide } from '../utils/api';
 import { slugify } from '../utils/format';
 import { scaleFont } from '../utils/responsive';
-import { colors, fonts, radius } from '../styles/theme';
+import { fonts, radius } from '../styles/theme';
+import { useTheme } from '../contexts/ThemeContext';
+import { t, tPlural } from '../i18n';
+import { getCityName, cityMatchesQuery } from '../utils/cityName';
 
 const MAX_CITIES = 10;
 
-export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
+export default function AddCityModal({ visible, onClose, userCities, onAddMany, language }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [query, setQuery] = useState('');
   const [apiResults, setApiResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [selectedCities, setSelectedCities] = useState(new Map());
 
-  const isAdded = (id) => userCities.some((c) => c.id === id);
+  const isAlreadyInList = (id) => userCities.some((c) => c.id === id);
+  const isSelected = (id) => selectedCities.has(id);
 
-  const localResults = ukrainianCities.filter((c) =>
-    c.name.toLowerCase().includes(query.toLowerCase())
-  );
+  const totalAfterAdd = userCities.length + selectedCities.size;
+
+  const localResults = ukrainianCities.filter((c) => cityMatchesQuery(c, query));
 
   const searchWorldwide = async () => {
     if (!query.trim()) return;
@@ -30,20 +38,15 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
       setSearching(true);
       const data = await searchCitiesWorldwide(query);
 
-      // Перетворюємо у формат наших міст із унікальним id
       const seen = new Set();
       const results = [];
 
       for (const r of data) {
-        // Базовий id (для пошуку картинки): warsaw_pl
         const baseId = slugify(`${r.name}_${r.country}`);
-
-        // Унікальний id (для React-ключів): warsaw_pl_5223_2101 з координатами
         const lat = Math.round(r.lat * 100);
         const lon = Math.round(r.lon * 100);
         const uniqueId = `${baseId}_${lat}_${lon}`;
 
-        // Захист від повних дублікатів
         if (seen.has(uniqueId)) continue;
         seen.add(uniqueId);
 
@@ -53,7 +56,6 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
           country: r.country,
           latitude: r.lat,
           longitude: r.lon,
-          // Допоміжний регіон: state з API, якщо є — для розрізнення міст-тезок
           region: r.state || null,
         });
       }
@@ -61,48 +63,81 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
       setApiResults(results);
     } catch (e) {
       console.log('API search error:', e);
-      Alert.alert('Помилка', 'Не вдалось виконати пошук. Перевірте інтернет.');
+      Alert.alert(t('errorTitle'), t('errorSearch'));
     } finally {
       setSearching(false);
     }
   };
 
-  const handleAdd = (city) => {
-    if (isAdded(city.id)) {
-      Alert.alert('Місто вже додане');
-      return;
-    }
-    if (userCities.length >= MAX_CITIES) {
-      Alert.alert('Ліміт', `Максимум ${MAX_CITIES} міст. Спершу видаліть якесь.`);
-      return;
-    }
-    onAdd(city);
+  const toggleSelect = (city) => {
+    setSelectedCities((prev) => {
+      const next = new Map(prev);
+      if (next.has(city.id)) {
+        next.delete(city.id);
+      } else {
+        if (userCities.length + next.size >= MAX_CITIES) {
+          Alert.alert(t('limitTitle'), t('limitText', { max: MAX_CITIES }));
+          return prev;
+        }
+        next.set(city.id, city);
+      }
+      return next;
+    });
+  };
+
+  const handleConfirm = () => {
+    if (selectedCities.size === 0) return;
+    const cities = Array.from(selectedCities.values());
+    onAddMany(cities);
     setQuery('');
     setApiResults([]);
+    setSelectedCities(new Map());
+    onClose();
   };
 
   const handleClose = () => {
     setQuery('');
     setApiResults([]);
+    setSelectedCities(new Map());
     onClose();
   };
 
   const renderRow = (item, fromApi) => {
-    const added = isAdded(item.id);
-    const subtitle = fromApi
-      ? `${[item.region, item.country].filter(Boolean).join(', ')} · From web`
-      : `${item.country} · In library`;
+    const alreadyAdded = isAlreadyInList(item.id);
+    const selected = isSelected(item.id);
+
+    const cityForDisplay = { ...item, name: getCityName(item, language) };
+
+    let subtitle;
+    if (fromApi) {
+      const region = [item.region, item.country].filter(Boolean).join(', ');
+      subtitle = alreadyAdded ? `${region} · ${t('alreadyAdded')}` : `${region} · ${t('fromWeb')}`;
+    } else {
+      subtitle = alreadyAdded ? `${item.country} · ${t('alreadyAdded')}` : `${item.country} · ${t('inLibrary')}`;
+    }
+
+    let rightSlot;
+    if (alreadyAdded) {
+      rightSlot = <Text style={styles.checkAdded}>✓</Text>;
+    } else if (selected) {
+      rightSlot = <Text style={styles.checkSelected}>✓</Text>;
+    } else {
+      rightSlot = <Text style={styles.checkUnselected}>+</Text>;
+    }
+
     return (
       <CityRow
         key={item.id}
-        city={item}
-        disabled={added}
-        onPress={() => handleAdd(item)}
+        city={cityForDisplay}
+        disabled={alreadyAdded}
+        onPress={alreadyAdded ? null : () => toggleSelect(item)}
         subtitle={subtitle}
-        rightSlot={<Text style={styles.addIcon}>{added ? '✓' : '+'}</Text>}
+        rightSlot={rightSlot}
       />
     );
   };
+
+  const selectedCount = selectedCities.size;
 
   return (
     <Modal
@@ -120,14 +155,19 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
             <TouchableOpacity onPress={handleClose} hitSlop={20} style={styles.backButton}>
               <Text style={styles.backIcon}>‹</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>Add city</Text>
+            <Text style={styles.title}>{t('addCity')}</Text>
             <View style={{ flex: 1 }} />
+            {selectedCount > 0 && (
+              <Text style={styles.counter}>
+                {totalAfterAdd}/{MAX_CITIES}
+              </Text>
+            )}
           </View>
 
           <View style={styles.searchContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Type city name..."
+              placeholder={t('typeCityName')}
               placeholderTextColor={colors.textLight}
               value={query}
               onChangeText={setQuery}
@@ -144,12 +184,13 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
               {searching ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.searchButtonText}>Worldwide</Text>
+                <Text style={styles.searchButtonText}>{t('worldwide')}</Text>
               )}
             </TouchableOpacity>
           </View>
 
           <FlatList
+            style={{ flex: 1 }}
             data={[]}
             keyExtractor={() => 'placeholder'}
             renderItem={null}
@@ -157,101 +198,147 @@ export default function AddCityModal({ visible, onClose, userCities, onAdd }) {
               <View style={{ padding: 16 }}>
                 {(query.length === 0 || localResults.length > 0) && (
                   <>
-                    <Text style={styles.sectionLabel}>Ukrainian cities</Text>
+                    <Text style={styles.sectionLabel}>{t('ukrainianCities')}</Text>
                     {(query ? localResults : ukrainianCities).map((item) => renderRow(item, false))}
                   </>
                 )}
 
                 {apiResults.length > 0 && (
                   <>
-                    <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Other cities</Text>
+                    <Text style={[styles.sectionLabel, { marginTop: 24 }]}>{t('otherCities')}</Text>
                     {apiResults.map((item) => renderRow(item, true))}
                   </>
                 )}
 
                 {query.length > 0 && localResults.length === 0 && apiResults.length === 0 && !searching && (
                   <Text style={styles.hint}>
-                    Натисніть «Worldwide», щоб знайти "{query}" в інтернеті
+                    {t('searchHint', { query })}
                   </Text>
                 )}
               </View>
             }
           />
+
+          {selectedCount > 0 && (
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
+                <Text style={styles.confirmButtonText}>
+                  {tPlural('addNCities', selectedCount)}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  backButton: { paddingRight: 4 },
-  backIcon: {
-    fontSize: scaleFont(34),
-    color: colors.text,
-    fontFamily: fonts.bold,
-  },
-  title: {
-    fontSize: scaleFont(22),
-    color: colors.text,
-    fontFamily: fonts.extraBold,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  searchInput: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderRadius: radius.small,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: scaleFont(16),
-    fontFamily: fonts.regular,
-    color: colors.text,
-  },
-  searchButton: {
-    backgroundColor: colors.accentDark,
-    paddingHorizontal: 18,
-    justifyContent: 'center',
-    borderRadius: radius.small,
-    minWidth: 100,
-  },
-  searchButtonText: {
-    color: 'white',
-    fontSize: scaleFont(13),
-    fontFamily: fonts.bold,
-  },
-  sectionLabel: {
-    fontSize: scaleFont(12),
-    color: colors.textLight,
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  hint: {
-    fontSize: scaleFont(14),
-    color: colors.textLight,
-    textAlign: 'center',
-    fontFamily: fonts.regular,
-    marginTop: 24,
-  },
-  addIcon: {
-    fontSize: scaleFont(24),
-    color: colors.accent,
-    fontFamily: fonts.bold,
-    paddingHorizontal: 8,
-  },
-});
+const createStyles = (colors) =>
+  StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: colors.background },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.divider,
+    },
+    backButton: { paddingRight: 4 },
+    backIcon: {
+      fontSize: scaleFont(34),
+      color: colors.text,
+      fontFamily: fonts.bold,
+    },
+    title: {
+      fontSize: scaleFont(22),
+      color: colors.text,
+      fontFamily: fonts.extraBold,
+    },
+    counter: {
+      fontSize: scaleFont(14),
+      color: colors.textLight,
+      fontFamily: fonts.bold,
+    },
+    searchContainer: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    searchInput: {
+      flex: 1,
+      backgroundColor: colors.cardBackground,
+      borderRadius: radius.small,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      fontSize: scaleFont(16),
+      fontFamily: fonts.regular,
+      color: colors.text,
+    },
+    searchButton: {
+      backgroundColor: colors.accentDark,
+      paddingHorizontal: 18,
+      justifyContent: 'center',
+      borderRadius: radius.small,
+      minWidth: 100,
+    },
+    searchButtonText: {
+      color: 'white',
+      fontSize: scaleFont(13),
+      fontFamily: fonts.bold,
+    },
+    sectionLabel: {
+      fontSize: scaleFont(12),
+      color: colors.textLight,
+      fontFamily: fonts.bold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: 8,
+    },
+    hint: {
+      fontSize: scaleFont(14),
+      color: colors.textLight,
+      textAlign: 'center',
+      fontFamily: fonts.regular,
+      marginTop: 24,
+    },
+    checkAdded: {
+      fontSize: scaleFont(20),
+      color: colors.textLight,
+      fontFamily: fonts.bold,
+      paddingHorizontal: 8,
+    },
+    checkSelected: {
+      fontSize: scaleFont(24),
+      color: colors.accent,
+      fontFamily: fonts.extraBold,
+      paddingHorizontal: 8,
+    },
+    checkUnselected: {
+      fontSize: scaleFont(24),
+      color: colors.textLight,
+      fontFamily: fonts.regular,
+      paddingHorizontal: 8,
+    },
+    footer: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderTopWidth: 1,
+      borderTopColor: colors.divider,
+      backgroundColor: colors.background,
+    },
+    confirmButton: {
+      backgroundColor: colors.accentDark,
+      borderRadius: radius.small,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    confirmButtonText: {
+      color: 'white',
+      fontSize: scaleFont(15),
+      fontFamily: fonts.bold,
+    },
+  });

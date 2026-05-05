@@ -3,6 +3,17 @@ import * as Location from 'expo-location';
 import { ukrainianCities } from '../data/cities';
 import { loadUserData, saveUserData } from '../data/storage';
 import { findClosestCity } from '../utils/geo';
+import { getDeviceLanguage, setLocale } from '../i18n';
+
+function refreshLibraryCities(savedCities) {
+  return savedCities.map((saved) => {
+    const fromLib = ukrainianCities.find((c) => c.id === saved.id);
+    return fromLib ? { ...saved, ...fromLib } : saved;
+  });
+}
+
+const VALID_THEMES = ['light', 'dark', 'auto'];
+const VALID_UNITS = ['metric', 'imperial'];
 
 export function useCityManager() {
   const [userCities, setUserCities] = useState([]);
@@ -10,22 +21,40 @@ export function useCityManager() {
   const [manuallySetDefault, setManuallySetDefault] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [storageLoaded, setStorageLoaded] = useState(false);
+  const [language, setLanguageState] = useState('en');
+  const [themePreference, setThemePreferenceState] = useState('auto');
+  const [units, setUnitsState] = useState('metric');
 
-  // ── Початкове завантаження ──
   useEffect(() => {
     const init = async () => {
       const stored = await loadUserData();
 
+      const initialLang = stored?.language || getDeviceLanguage();
+      setLocale(initialLang);
+      setLanguageState(initialLang);
+
+      const storedTheme = stored?.themePreference;
+      if (storedTheme && VALID_THEMES.includes(storedTheme)) {
+        setThemePreferenceState(storedTheme);
+      }
+
+      const storedUnits = stored?.units;
+      if (storedUnits && VALID_UNITS.includes(storedUnits)) {
+        setUnitsState(storedUnits);
+      }
+
       if (stored?.userCities?.length > 0) {
-        setUserCities(stored.userCities);
+        const refreshed = refreshLibraryCities(stored.userCities);
+
+        setUserCities(refreshed);
         setDefaultCityId(stored.defaultCityId);
         setManuallySetDefault(stored.manuallySetDefault || false);
 
-        const idx = stored.userCities.findIndex((c) => c.id === stored.defaultCityId);
+        const idx = refreshed.findIndex((c) => c.id === stored.defaultCityId);
         setCurrentIndex(idx >= 0 ? idx : 0);
 
         if (!stored.manuallySetDefault) {
-          updateDefaultViaLocation(stored.userCities);
+          updateDefaultViaLocation(refreshed);
         }
       } else {
         await firstLaunchSetup();
@@ -84,13 +113,19 @@ export function useCityManager() {
     }
   };
 
-  // ── Збереження при будь-яких змінах ──
+  // Збереження при будь-яких змінах
   useEffect(() => {
     if (!storageLoaded) return;
-    saveUserData({ userCities, defaultCityId, manuallySetDefault });
-  }, [userCities, defaultCityId, manuallySetDefault, storageLoaded]);
+    saveUserData({
+      userCities,
+      defaultCityId,
+      manuallySetDefault,
+      language,
+      themePreference,
+      units,
+    });
+  }, [userCities, defaultCityId, manuallySetDefault, language, themePreference, units, storageLoaded]);
 
-  // ── Дії ──
   const goToPrevious = () => {
     setCurrentIndex(currentIndex > 0 ? currentIndex - 1 : userCities.length - 1);
   };
@@ -124,17 +159,48 @@ export function useCityManager() {
     setUserCities([...userCities, newCity]);
   };
 
+  const addManyCities = (newCities) => {
+    setUserCities([...userCities, ...newCities]);
+  };
+
+  const setLanguage = (code) => {
+    setLocale(code);
+    setLanguageState(code);
+  };
+
+  const setThemePreference = (pref) => {
+    if (!VALID_THEMES.includes(pref)) return;
+    setThemePreferenceState(pref);
+  };
+
+  const setUnits = (u) => {
+    if (!VALID_UNITS.includes(u)) return;
+    setUnitsState(u);
+  };
+
+  const toggleUnits = () => {
+    setUnitsState((u) => (u === 'metric' ? 'imperial' : 'metric'));
+  };
+
   return {
     userCities,
     currentIndex,
     currentCity: userCities[currentIndex],
     defaultCityId,
     storageLoaded,
+    language,
+    themePreference,
+    units,
     goToPrevious,
     goToNext,
     setIndex: setCurrentIndex,
     setDefault,
     removeCity,
     addCity,
+    addManyCities,
+    setLanguage,
+    setThemePreference,
+    setUnits,
+    toggleUnits,
   };
 }
