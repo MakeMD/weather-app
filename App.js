@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, FlatList, ScrollView, RefreshControl, Dimensions } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  ScrollView,
+  RefreshControl,
+  Dimensions,
+  Animated,
+} from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Nunito_400Regular, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
 import * as SplashScreen from 'expo-splash-screen';
@@ -8,6 +16,8 @@ import { useCityManager } from './hooks/useCityManager';
 import { useWeatherForAll } from './hooks/useWeatherForAll';
 import { useForecast } from './hooks/useForecast';
 import { weatherCache, forecastCache } from './utils/cache';
+import { isDayTime } from './utils/format';
+import { getWeatherPalette } from './utils/weatherPalette';
 import CityHeader from './components/CityHeader';
 import CityScreen from './components/CityScreen';
 import SettingsModal from './components/SettingsModal';
@@ -18,15 +28,14 @@ import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// SafeAreaView з підтримкою animated styles — щоб inline-bg плавно інтерполювався
+const AnimatedSafeAreaView = Animated.createAnimatedComponent(SafeAreaView);
+
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const MIN_SPLASH_DURATION_MS = 1500;
 const MODAL_TRANSITION_MS = 300;
 
-/**
- * Завантажити кешовану погоду і прогноз для всіх міст з диску паралельно.
- * Повертає { weatherInitial, forecastInitial } у форматі для useWeatherForAll/useForecast.
- */
 async function hydrateCaches(cities, language, units) {
   if (!cities?.length) return { weatherInitial: {}, forecastInitial: {} };
 
@@ -42,7 +51,7 @@ async function hydrateCaches(cities, language, units) {
       result[id] = {
         data: entry.data,
         fetchedAt: entry.fetchedAt,
-        loading: !entry.fresh, // якщо stale — UI ще покажемо ефект перевірки
+        loading: !entry.fresh,
         error: null,
         stale: !entry.fresh,
       };
@@ -67,6 +76,18 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
 
   const flatListRef = useRef(null);
 
+  // scrollX тепер ініціалізується з поточної позиції — щоб FlatList з
+  // initialScrollIndex не "стрибнув" по кольорах від 0 до cm.currentIndex.
+  const scrollX = useRef(
+    new Animated.Value(cm.currentIndex * SCREEN_WIDTH)
+  ).current;
+
+  // displayedIndex — який індекс зараз "візуально активний" (>50% видимий).
+  // Оновлюється під час свайпу через scrollX listener — header перемикається
+  // на нову назву міста тоді ж, коли фон проходить через 50% інтерполяції.
+  const [displayedIndex, setDisplayedIndex] = useState(cm.currentIndex);
+  const lastDisplayedIndexRef = useRef(cm.currentIndex);
+
   const { getWeatherFor, refresh, refreshing } = useWeatherForAll(
     cm.userCities,
     cm.currentIndex,
@@ -90,6 +111,35 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
       });
     }
   }, [cm.currentIndex, cm.userCities.length]);
+
+  // Listener: коли scrollX переходить через половину до сусіднього міста,
+  // оновлюємо displayedIndex (і header вмить отримує нову назву).
+  useEffect(() => {
+    if (cm.userCities.length < 2) return;
+
+    const id = scrollX.addListener(({ value }) => {
+      const newIdx = Math.round(value / SCREEN_WIDTH);
+      if (
+        newIdx !== lastDisplayedIndexRef.current &&
+        newIdx >= 0 &&
+        newIdx < cm.userCities.length
+      ) {
+        lastDisplayedIndexRef.current = newIdx;
+        setDisplayedIndex(newIdx);
+      }
+    });
+    return () => scrollX.removeListener(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cm.userCities.length]);
+
+  // Failsafe: якщо displayedIndex став нерелевантним після add/remove міста.
+  useEffect(() => {
+    if (displayedIndex >= cm.userCities.length) {
+      const safe = Math.max(0, cm.userCities.length - 1);
+      setDisplayedIndex(safe);
+      lastDisplayedIndexRef.current = safe;
+    }
+  }, [cm.userCities.length, displayedIndex]);
 
   const handleAddPress = () => {
     setShowSettings(false);
@@ -148,13 +198,47 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   const isSingleCity = cm.userCities.length === 1;
   const currentWeather = getWeatherFor(cm.currentCity);
   const currentForecast = getForecastFor(cm.currentCity);
-  const isDefault = cm.currentCity.id === cm.defaultCityId;
+
+  // "Візуально активне" місто — для header і fallback-палітри.
+  // Оновлюється real-time при свайпі.
+  const displayedCity = cm.userCities[displayedIndex] ?? cm.currentCity;
+  const displayedWeather = getWeatherFor(displayedCity);
+  const isDefault = displayedCity.id === cm.defaultCityId;
+
+  const isDark = scheme === 'dark';
+  const displayedMain = displayedWeather.data?.weather?.[0]?.main;
+  const displayedIsDay = isDayTime(displayedWeather.data);
+  const palette = getWeatherPalette(displayedMain, displayedIsDay, isDark);
+
+  // bg-кольори для всіх міст — для інтерполяції під час свайпу.
+  const paletteBgs = cm.userCities.map((c) => {
+    const w = getWeatherFor(c);
+    const m = w.data?.weather?.[0]?.main;
+    const d = isDayTime(w.data);
+    return getWeatherPalette(m, d, isDark).bg;
+  });
+  const paletteBgsKey = paletteBgs.join('|');
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const interpolatedBg = useMemo(() => {
+    if (paletteBgs.length < 2) return null;
+    return scrollX.interpolate({
+      inputRange: paletteBgs.map((_, i) => i * SCREEN_WIDTH),
+      outputRange: paletteBgs,
+      extrapolate: 'clamp',
+    });
+  }, [paletteBgsKey]);
+
+  const safeAreaBg = isSingleCity ? palette.bg : (interpolatedBg ?? palette.bg);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+    <AnimatedSafeAreaView
+      style={[styles.safeArea, { backgroundColor: safeAreaBg }]}
+      edges={['top', 'bottom', 'left', 'right']}
+    >
       <View style={styles.headerContainer}>
         <CityHeader
-          city={cm.currentCity}
+          city={displayedCity}
           language={cm.language}
           isDefault={isDefault}
           showArrows={!isSingleCity}
@@ -193,6 +277,11 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={onMomentumScrollEnd}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
           initialScrollIndex={cm.currentIndex}
           getItemLayout={(_, index) => ({
             length: SCREEN_WIDTH,
@@ -244,13 +333,13 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
         onClose={handleThemeClose}
         onSelectTheme={cm.setThemePreference}
       />
-    </SafeAreaView>
+    </AnimatedSafeAreaView>
   );
 }
 
 function AppShell() {
   const [splashReady, setSplashReady] = useState(false);
-  const [hydrated, setHydrated] = useState(null); // { weatherInitial, forecastInitial } | null
+  const [hydrated, setHydrated] = useState(null);
   const startTimeRef = useRef(Date.now());
 
   const [fontsLoaded] = useFonts({
@@ -261,7 +350,6 @@ function AppShell() {
 
   const cm = useCityManager();
 
-  // Гідруємо кеш одразу як storageLoaded і у нас є userCities
   useEffect(() => {
     if (!cm.storageLoaded || !cm.userCities.length || hydrated) return;
 
@@ -325,7 +413,7 @@ export default function App() {
 
 const createStyles = (colors) =>
   StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: colors.background },
+    safeArea: { flex: 1 },
     headerContainer: {
       paddingHorizontal: '5%',
       paddingTop: '2%',

@@ -1,6 +1,8 @@
 // Централізована тема додатку — дві палітри: light і dark.
 // Світлу залишаємо як було, темну будуємо в дусі мінімалізму.
 
+import { scaleHeight } from '../utils/responsive';
+
 export const lightColors = {
   background: '#F5F1E8',
   text: '#3D3D3D',
@@ -48,4 +50,13 @@ export const radius = {
   medium: 14,
   large: 16,
   xlarge: 20,
+};
+
+// Layout-константи — адаптивні через scaleHeight (reference: iPhone 13, 844pt).
+// safeAreaOffset лишаємо статичним: він описує device chrome (notch + home indicator),
+// яке не масштабується пропорційно висоті екрана — для iPhone із notch це ~80px.
+export const layout = {
+  hourlyPeek: scaleHeight(82),       // скільки видно плашки HourlyChart внизу екрану
+  safeAreaOffset: 80,                 // status bar + bottom safe area (для iPhone з notch)
+  pagePaddingVertical: scaleHeight(10), // вертикальні відступи на CityScreen
 };
