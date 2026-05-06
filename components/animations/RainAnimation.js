@@ -15,6 +15,8 @@ import { CLOUD_1, CLOUD_2, CLOUD_3, CLOUD_4 } from './cloudShapes';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Дефолти — застосовуються коли prop не передано (back-compat).
+// Експортуємо, бо ThunderstormAnimation бере RAIN_COLOR як свій fallback.
 export const DARK_CLOUD_COLOR = '#6B6258';
 export const RAIN_COLOR = '#9FB0BF';
 
@@ -125,10 +127,15 @@ export function generateDrops(count) {
   return drops;
 }
 
-export default function RainAnimation({ intensity = 1 }) {
+export default function RainAnimation({
+  intensity = 1,
+  cloudColor = DARK_CLOUD_COLOR,
+  dropColor = RAIN_COLOR,
+}) {
+  // useMemo тепер залежить від cloudColor — перетинт відбудеться при зміні теми/палітри
   const tinted = useMemo(
-    () => CLOUD_TEMPLATES.map((t) => tintDarkCloudSvg(t, DARK_CLOUD_COLOR)),
-    []
+    () => CLOUD_TEMPLATES.map((t) => tintDarkCloudSvg(t, cloudColor)),
+    [cloudColor]
   );
   const drops = useMemo(() => generateDrops(Math.round(22 * intensity)), [intensity]);
 
@@ -147,7 +154,7 @@ export default function RainAnimation({ intensity = 1 }) {
           duration={d.duration}
           delay={d.delay}
           opacity={d.opacity}
-          color={RAIN_COLOR}
+          color={dropColor}
         />
       ))}
     </View>

@@ -69,5 +69,8 @@
 "themeAuto": "Авто",
 "units": "Одиниці",
 "unitsMetric": "Метричні (°C, м/с, км)",
-"unitsImperial": "Імперські (°F, mph, mi)"
+"unitsImperial": "Імперські (°F, mph, mi)",
+"hapticFeedback": "Тактильний відгук",
+"on": "Увімкнено",
+"off": "Вимкнено"
 }

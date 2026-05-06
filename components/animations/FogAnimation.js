@@ -1,4 +1,9 @@
 // components/animations/FogAnimation.js
+// Архітектура двошарова:
+//   1. FogVeil — повноекранна вуаль, рендериться на рівні App.js (поверх
+//      header, карток, всього UI) — атмосферний "ефект на світ".
+//   2. FogBands — локальні смуги, рендеряться в CityScreen scope
+//      (всередині sceny CityImage), додають місцеву густоту/рух.
 import React, { useEffect, useMemo } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Animated, {
@@ -14,31 +19,30 @@ import Svg, { Defs, LinearGradient, Stop, Rect, SvgXml } from 'react-native-svg'
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const FOG_COLOR = '#C8C4BC';
+const DEFAULT_FOG_COLOR = '#C8C4BC';
 
-// Параметри загальної завіси: вертикальний градієнт прозорості.
-// Туман у природі стелиться знизу — тому низ густіший, верх рідший.
+// Параметри вуалі
 const FOG_VEIL = {
-  topOpacity: 0.30,     // вгорі екрану — туман рідший
-  bottomOpacity: 0.65,  // внизу — щільний
-  pulseAmount: 0.08,    // на скільки гойдається — "дихання" туману
-  pulseDuration: 6500,  // 6.5 сек повний цикл — неспішне дихання
+  topOpacity: 0.30,
+  bottomOpacity: 0.65,
+  pulseAmount: 0.08,
+  pulseDuration: 6500,
 };
 
-// --- Загальна завіса туману ---
-// Повноекранний SVG-прямокутник з вертикальним градієнтом + м'яка пульсація прозорості.
-function FogVeil() {
+// --- ПОВНОЕКРАННА ВУАЛЬ — експортується для рендеру в App.js ---
+// Рендериться поверх всього UI (як єдиний overlay на рівні SafeArea).
+// pointerEvents="none" гарантує що не блокує взаємодію.
+export function FogVeil({ color = DEFAULT_FOG_COLOR }) {
   const breath = useSharedValue(1);
 
   useEffect(() => {
-    // breath коливається 1 ↔ (1 - pulseAmount), тобто туман то трохи рідший, то нормальний
     breath.value = withRepeat(
       withTiming(1 - FOG_VEIL.pulseAmount, {
         duration: FOG_VEIL.pulseDuration,
         easing: Easing.inOut(Easing.sin),
       }),
       -1,
-      true // реверс — туди-назад
+      true
     );
     return () => cancelAnimation(breath);
   }, []);
@@ -48,7 +52,10 @@ function FogVeil() {
   }));
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]} pointerEvents="none">
+    <Animated.View
+      style={[StyleSheet.absoluteFill, animatedStyle]}
+      pointerEvents="none"
+    >
       <Svg
         style={StyleSheet.absoluteFill}
         preserveAspectRatio="none"
@@ -56,8 +63,8 @@ function FogVeil() {
       >
         <Defs>
           <LinearGradient id="fogVeil" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor={FOG_COLOR} stopOpacity={FOG_VEIL.topOpacity} />
-            <Stop offset="100%" stopColor={FOG_COLOR} stopOpacity={FOG_VEIL.bottomOpacity} />
+            <Stop offset="0%" stopColor={color} stopOpacity={FOG_VEIL.topOpacity} />
+            <Stop offset="100%" stopColor={color} stopOpacity={FOG_VEIL.bottomOpacity} />
           </LinearGradient>
         </Defs>
         <Rect x="0" y="0" width="1" height="1" fill="url(#fogVeil)" />
@@ -66,7 +73,7 @@ function FogVeil() {
   );
 }
 
-// --- SVG-силует туманної смуги ---
+// --- Локальна туманна смуга (в межах CityScreen scope) ---
 function buildBandSvg(color, peakOpacity) {
   return `<svg viewBox="0 0 400 100" xmlns="http://www.w3.org/2000/svg">
     <defs>
@@ -80,7 +87,6 @@ function buildBandSvg(color, peakOpacity) {
   </svg>`;
 }
 
-// --- Одна смуга, що дрейфує зліва направо ---
 function FogBand({
   topPercent, width, height, duration, delay,
   peakOpacity, startOffset, color,
@@ -139,7 +145,12 @@ function generateBands(count) {
   return bands;
 }
 
-export default function FogAnimation({ intensity = 1 }) {
+// --- Default export — тільки локальні смуги (без FogVeil) ---
+// FogVeil тепер живе на App.js рівні, тому тут його не треба.
+export default function FogAnimation({
+  intensity = 1,
+  color = DEFAULT_FOG_COLOR,
+}) {
   const bands = useMemo(
     () => generateBands(Math.round(6 * intensity)),
     [intensity]
@@ -147,12 +158,8 @@ export default function FogAnimation({ intensity = 1 }) {
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Шар 1: загальна завіса — знижує видимість міста */}
-      <FogVeil />
-
-      {/* Шар 2: дрейфуючі смуги — додають локальну густоту і рух */}
       {bands.map((b, i) => (
-        <FogBand key={i} {...b} color={FOG_COLOR} />
+        <FogBand key={i} {...b} color={color} />
       ))}
     </View>
   );

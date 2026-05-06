@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   View,
@@ -18,13 +18,16 @@ import { useForecast } from './hooks/useForecast';
 import { weatherCache, forecastCache } from './utils/cache';
 import { isDayTime } from './utils/format';
 import { getWeatherPalette } from './utils/weatherPalette';
+import { haptics } from './utils/haptics';
+import { lightColors, darkColors } from './styles/theme';
 import CityHeader from './components/CityHeader';
 import CityScreen from './components/CityScreen';
 import SettingsModal from './components/SettingsModal';
 import AddCityModal from './components/AddCityModal';
 import LanguageModal from './components/LanguageModal';
 import ThemeModal from './components/ThemeModal';
-import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { FogVeil } from './components/animations/FogAnimation';
+import { ThemeProvider, useTheme, ThemeContext } from './contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -35,6 +38,12 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const MIN_SPLASH_DURATION_MS = 1500;
 const MODAL_TRANSITION_MS = 300;
+
+// Атмосферні погоди — для них рендериться FogVeil на App-level (повноекранний overlay).
+// Локальні bands (туманні смуги) лишаються в FogAnimation в межах CityScreen.
+const ATMOSPHERIC_WEATHER = [
+  'Mist', 'Fog', 'Haze', 'Smoke', 'Dust', 'Sand', 'Ash', 'Squall', 'Tornado',
+];
 
 async function hydrateCaches(cities, language, units) {
   if (!cities?.length) return { weatherInitial: {}, forecastInitial: {} };
@@ -66,8 +75,9 @@ async function hydrateCaches(cities, language, units) {
 }
 
 function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
-  const { colors, scheme } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const baseTheme = useTheme();
+  const baseScheme = baseTheme.scheme;
+  const baseIsDark = baseScheme === 'dark';
 
   const [showSettings, setShowSettings] = useState(false);
   const [showAddCity, setShowAddCity] = useState(false);
@@ -76,15 +86,10 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
 
   const flatListRef = useRef(null);
 
-  // scrollX тепер ініціалізується з поточної позиції — щоб FlatList з
-  // initialScrollIndex не "стрибнув" по кольорах від 0 до cm.currentIndex.
   const scrollX = useRef(
     new Animated.Value(cm.currentIndex * SCREEN_WIDTH)
   ).current;
 
-  // displayedIndex — який індекс зараз "візуально активний" (>50% видимий).
-  // Оновлюється під час свайпу через scrollX listener — header перемикається
-  // на нову назву міста тоді ж, коли фон проходить через 50% інтерполяції.
   const [displayedIndex, setDisplayedIndex] = useState(cm.currentIndex);
   const lastDisplayedIndexRef = useRef(cm.currentIndex);
 
@@ -103,6 +108,13 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     forecastInitial
   );
 
+  // Pull-to-refresh: тригериться коли користувач відпускає палець після
+  // того, як перетягнув вниз за поріг. Medium impact — підтверджує дію.
+  const handleRefresh = useCallback(() => {
+    haptics.medium();
+    refresh();
+  }, [refresh]);
+
   useEffect(() => {
     if (flatListRef.current && cm.userCities.length > 0) {
       flatListRef.current.scrollToIndex({
@@ -112,8 +124,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     }
   }, [cm.currentIndex, cm.userCities.length]);
 
-  // Listener: коли scrollX переходить через половину до сусіднього міста,
-  // оновлюємо displayedIndex (і header вмить отримує нову назву).
   useEffect(() => {
     if (cm.userCities.length < 2) return;
 
@@ -132,7 +142,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cm.userCities.length]);
 
-  // Failsafe: якщо displayedIndex став нерелевантним після add/remove міста.
   useEffect(() => {
     if (displayedIndex >= cm.userCities.length) {
       const safe = Math.max(0, cm.userCities.length - 1);
@@ -145,35 +154,33 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     setShowSettings(false);
     setTimeout(() => setShowAddCity(true), MODAL_TRANSITION_MS);
   };
-
   const handleAddCityClose = () => {
     setShowAddCity(false);
     setTimeout(() => setShowSettings(true), MODAL_TRANSITION_MS);
   };
-
   const handleLanguagePress = () => {
     setShowSettings(false);
     setTimeout(() => setShowLanguage(true), MODAL_TRANSITION_MS);
   };
-
   const handleLanguageClose = () => {
     setShowLanguage(false);
     setTimeout(() => setShowSettings(true), MODAL_TRANSITION_MS);
   };
-
   const handleThemePress = () => {
     setShowSettings(false);
     setTimeout(() => setShowTheme(true), MODAL_TRANSITION_MS);
   };
-
   const handleThemeClose = () => {
     setShowTheme(false);
     setTimeout(() => setShowSettings(true), MODAL_TRANSITION_MS);
   };
 
+  // Свайп завершився — момент "snap" до нового міста. Light impact —
+  // як перегортання сторінки. Спрацьовує лише при реальній зміні index'а.
   const onMomentumScrollEnd = (e) => {
     const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (newIndex !== cm.currentIndex && newIndex >= 0 && newIndex < cm.userCities.length) {
+      haptics.light();
       cm.setIndex(newIndex);
     }
   };
@@ -199,23 +206,40 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   const currentWeather = getWeatherFor(cm.currentCity);
   const currentForecast = getForecastFor(cm.currentCity);
 
-  // "Візуально активне" місто — для header і fallback-палітри.
-  // Оновлюється real-time при свайпі.
   const displayedCity = cm.userCities[displayedIndex] ?? cm.currentCity;
   const displayedWeather = getWeatherFor(displayedCity);
   const isDefault = displayedCity.id === cm.defaultCityId;
-
-  const isDark = scheme === 'dark';
   const displayedMain = displayedWeather.data?.weather?.[0]?.main;
   const displayedIsDay = isDayTime(displayedWeather.data);
-  const palette = getWeatherPalette(displayedMain, displayedIsDay, isDark);
 
-  // bg-кольори для всіх міст — для інтерполяції під час свайпу.
+  // ----- Theme Override на основі видимого міста -----
+  const isNightOverride = baseScheme !== 'dark' && !displayedIsDay && !!displayedWeather.data;
+  const effectiveIsDark = baseIsDark || isNightOverride;
+
+  const effectiveTheme = useMemo(() => {
+    if (!isNightOverride) return baseTheme;
+    return {
+      colors: darkColors,
+      scheme: 'dark',
+      preference: baseTheme.preference,
+    };
+  }, [isNightOverride, baseTheme]);
+
+  const colors = effectiveTheme.colors;
+  const scheme = effectiveTheme.scheme;
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const palette = getWeatherPalette(displayedMain, displayedIsDay, effectiveIsDark);
+
+  // ----- Атмосферна погода (туман/мряка/etc) → FogVeil на повний екран -----
+  const isAtmospheric = !!displayedMain && ATMOSPHERIC_WEATHER.includes(displayedMain);
+
   const paletteBgs = cm.userCities.map((c) => {
     const w = getWeatherFor(c);
     const m = w.data?.weather?.[0]?.main;
     const d = isDayTime(w.data);
-    return getWeatherPalette(m, d, isDark).bg;
+    const cityUseDark = baseIsDark || (!d && !!w.data);
+    return getWeatherPalette(m, d, cityUseDark).bg;
   });
   const paletteBgsKey = paletteBgs.join('|');
 
@@ -232,108 +256,125 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   const safeAreaBg = isSingleCity ? palette.bg : (interpolatedBg ?? palette.bg);
 
   return (
-    <AnimatedSafeAreaView
-      style={[styles.safeArea, { backgroundColor: safeAreaBg }]}
-      edges={['top', 'bottom', 'left', 'right']}
-    >
-      <View style={styles.headerContainer}>
-        <CityHeader
-          city={displayedCity}
-          language={cm.language}
-          isDefault={isDefault}
-          showArrows={!isSingleCity}
-          onPrevious={cm.goToPrevious}
-          onNext={cm.goToNext}
-          onSettings={() => setShowSettings(true)}
-        />
-      </View>
+    <ThemeContext.Provider value={effectiveTheme}>
+      <AnimatedSafeAreaView
+        style={[styles.safeArea, { backgroundColor: safeAreaBg }]}
+        edges={['top', 'bottom', 'left', 'right']}
+      >
+        {/* ======================================================
+            АТМОСФЕРНИЙ ШАР — вуаль туману
+            ======================================================
+            Render order у RN = z-order. FogVeil рендериться ПЕРШИМ
+            всередині SafeArea, тому опиняється:
+              ↑ Modals (окремий root, найвище)
+              ↑ headerContainer + FlatList/ScrollView (UI поверх вуалі)
+              ↑ FogVeil  ← ТУТ — атмосферний шар
+              ↑ SafeArea bg (інтерпольований колір палітри)
+            ====================================================== */}
+        {isAtmospheric && <FogVeil color={palette.fog} />}
 
-      {isSingleCity ? (
-        <ScrollView
-          contentContainerStyle={styles.singleCityContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text} />
-          }
-        >
-          <CityScreen
-            city={cm.currentCity}
+        <View style={styles.headerContainer}>
+          <CityHeader
+            city={displayedCity}
             language={cm.language}
-            units={cm.units}
-            weatherData={currentWeather.data}
-            loading={currentWeather.loading}
-            error={currentWeather.error}
-            forecastData={currentForecast.data}
-            forecastLoading={currentForecast.loading}
+            isDefault={isDefault}
+            showArrows={!isSingleCity}
+            onPrevious={cm.goToPrevious}
+            onNext={cm.goToNext}
+            onSettings={() => setShowSettings(true)}
           />
-        </ScrollView>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={cm.userCities}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={onMomentumScrollEnd}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: false }
-          )}
-          scrollEventThrottle={16}
-          initialScrollIndex={cm.currentIndex}
-          getItemLayout={(_, index) => ({
-            length: SCREEN_WIDTH,
-            offset: SCREEN_WIDTH * index,
-            index,
-          })}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text} />
-          }
+        </View>
+
+        {isSingleCity ? (
+          <ScrollView
+            contentContainerStyle={styles.singleCityContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text} />
+            }
+          >
+            <CityScreen
+              city={cm.currentCity}
+              language={cm.language}
+              units={cm.units}
+              weatherData={currentWeather.data}
+              loading={currentWeather.loading}
+              error={currentWeather.error}
+              forecastData={currentForecast.data}
+              forecastLoading={currentForecast.loading}
+            />
+          </ScrollView>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={cm.userCities}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={onMomentumScrollEnd}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: false }
+            )}
+            scrollEventThrottle={16}
+            initialScrollIndex={cm.currentIndex}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text} />
+            }
+          />
+        )}
+
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+
+        <SettingsModal
+          visible={showSettings}
+          language={cm.language}
+          themePreference={cm.themePreference}
+          units={cm.units}
+          onClose={() => setShowSettings(false)}
+          userCities={cm.userCities}
+          defaultCityId={cm.defaultCityId}
+          onSetDefault={cm.setDefault}
+          onRemove={cm.removeCity}
+          onAddPress={handleAddPress}
+          onLanguagePress={handleLanguagePress}
+          onThemePress={handleThemePress}
+          onToggleUnits={cm.toggleUnits}
+          // ⬇️ нові пропси для глобального haptic toggle
+          hapticsEnabled={cm.hapticsEnabled}
+          onToggleHaptics={cm.toggleHaptics}
         />
-      )}
 
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+        <AddCityModal
+          visible={showAddCity}
+          language={cm.language}
+          onClose={handleAddCityClose}
+          userCities={cm.userCities}
+          onAddMany={cm.addManyCities}
+        />
 
-      <SettingsModal
-        visible={showSettings}
-        language={cm.language}
-        themePreference={cm.themePreference}
-        units={cm.units}
-        onClose={() => setShowSettings(false)}
-        userCities={cm.userCities}
-        defaultCityId={cm.defaultCityId}
-        onSetDefault={cm.setDefault}
-        onRemove={cm.removeCity}
-        onAddPress={handleAddPress}
-        onLanguagePress={handleLanguagePress}
-        onThemePress={handleThemePress}
-        onToggleUnits={cm.toggleUnits}
-      />
+        <LanguageModal
+          visible={showLanguage}
+          currentLanguage={cm.language}
+          onClose={handleLanguageClose}
+          onSelectLanguage={cm.setLanguage}
+        />
 
-      <AddCityModal
-        visible={showAddCity}
-        language={cm.language}
-        onClose={handleAddCityClose}
-        userCities={cm.userCities}
-        onAddMany={cm.addManyCities}
-      />
-
-      <LanguageModal
-        visible={showLanguage}
-        currentLanguage={cm.language}
-        onClose={handleLanguageClose}
-        onSelectLanguage={cm.setLanguage}
-      />
-
-      <ThemeModal
-        visible={showTheme}
-        currentPreference={cm.themePreference}
-        onClose={handleThemeClose}
-        onSelectTheme={cm.setThemePreference}
-      />
-    </AnimatedSafeAreaView>
+        <ThemeModal
+          visible={showTheme}
+          currentPreference={cm.themePreference}
+          onClose={handleThemeClose}
+          onSelectTheme={cm.setThemePreference}
+        />
+      </AnimatedSafeAreaView>
+    </ThemeContext.Provider>
   );
 }
 

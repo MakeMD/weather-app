@@ -2,7 +2,9 @@ import { createContext, useContext, useMemo, useState, useEffect } from 'react';
 import { Appearance } from 'react-native';
 import { lightColors, darkColors } from '../styles/theme';
 
-const ThemeContext = createContext(null);
+// Named export — потрібен щоб місцями (наприклад в App.js) можна було
+// тимчасово override-нути значення через <ThemeContext.Provider>.
+export const ThemeContext = createContext(null);
 
 export function ThemeProvider({ preference = 'auto', children }) {
   const [systemScheme, setSystemScheme] = useState(() => Appearance.getColorScheme());

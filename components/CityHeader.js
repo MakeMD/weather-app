@@ -4,6 +4,7 @@ import { getCityName } from '../utils/cityName';
 import { scaleFont } from '../utils/responsive';
 import { fonts } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
+import { haptics } from '../utils/haptics';
 
 export default function CityHeader({
   city,
@@ -19,13 +20,28 @@ export default function CityHeader({
 
   const displayName = getCityName(city, language);
 
+  // Haptic-обгортки: light на стрілках (як snap при свайпі) і на ⚙️ (open settings).
+  // Optional chaining гарантує що якщо prop не передано — нічого не падає.
+  const handlePrevious = () => {
+    haptics.light();
+    onPrevious?.();
+  };
+  const handleNext = () => {
+    haptics.light();
+    onNext?.();
+  };
+  const handleSettings = () => {
+    haptics.light();
+    onSettings?.();
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.left} />
 
       <View style={styles.center}>
         {showArrows && (
-          <TouchableOpacity onPress={onPrevious} hitSlop={12}>
+          <TouchableOpacity onPress={handlePrevious} hitSlop={12}>
             <Text style={styles.arrow}>‹</Text>
           </TouchableOpacity>
         )}
@@ -33,14 +49,14 @@ export default function CityHeader({
           {displayName} {isDefault && <Text style={styles.pin}>📍</Text>}
         </Text>
         {showArrows && (
-          <TouchableOpacity onPress={onNext} hitSlop={12}>
+          <TouchableOpacity onPress={handleNext} hitSlop={12}>
             <Text style={styles.arrow}>›</Text>
           </TouchableOpacity>
         )}
       </View>
 
       <View style={styles.right}>
-        <TouchableOpacity onPress={onSettings} hitSlop={12}>
+        <TouchableOpacity onPress={handleSettings} hitSlop={12}>
           <Text style={styles.icon}>⚙️</Text>
         </TouchableOpacity>
       </View>

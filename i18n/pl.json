@@ -69,5 +69,8 @@
 "themeAuto": "Auto",
 "units": "Jednostki",
 "unitsMetric": "Metryczne (°C, m/s, km)",
-"unitsImperial": "Imperialne (°F, mph, mi)"
+"unitsImperial": "Imperialne (°F, mph, mi)",
+"hapticFeedback": "Wibracja",
+"on": "Włączone",
+"off": "Wyłączone"
 }

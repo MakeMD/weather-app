@@ -22,11 +22,14 @@ import {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const STORM_CLOUD_COLOR = '#4A4339';
+// Дефолти на випадок виклику без props
+const DEFAULT_STORM_CLOUD_COLOR = '#4A4339';
+
+// Блискавка та flash overlay — завжди білі (фізичний феномен).
+// Не виносимо в палітру, бо це не aesthetic choice.
 const LIGHTNING_COLOR = '#ffffff';
 
-// Пауза між блискавками. Зараз для діагностики 1.5-3 сек.
-// Для реалістичності можна повернути 4000-9000.
+// Пауза між блискавками (для діагностики можна тимчасово 1500-3000)
 const PAUSE_MIN = 4000;
 const PAUSE_MAX = 9000;
 
@@ -43,9 +46,7 @@ const LIGHTNING_HEIGHT = SCREEN_HEIGHT * 0.5;
 // --- Спалах: світлий прямокутник на повний екран ---
 function FlashOverlay() {
   const opacity = useSharedValue(0);
-  // Зберігаємо timeout id для коректного cleanup
   const timeoutRef = useRef(null);
-  // Прапорець "чи компонент ще живий" — щоб не запускати анімацію після unmount
   const isAliveRef = useRef(true);
 
   useEffect(() => {
@@ -57,11 +58,9 @@ function FlashOverlay() {
       const pause = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
       const isDouble = Math.random() < 0.4;
 
-      // Запланувати наступну блискавку через `pause` мс
       timeoutRef.current = setTimeout(() => {
         if (!isAliveRef.current) return;
 
-        // Власне сама анімація спалаху
         opacity.value = withSequence(
           withTiming(0.85, { duration: 60, easing: Easing.linear }),
           withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) }),
@@ -73,7 +72,6 @@ function FlashOverlay() {
             : [])
         );
 
-        // Через ~800мс анімація завершиться — плануємо наступну
         scheduleNext();
       }, pause);
     }
@@ -155,10 +153,15 @@ function LightningBolt() {
   );
 }
 
-export default function ThunderstormAnimation({ intensity = 1.2 }) {
+export default function ThunderstormAnimation({
+  intensity = 1.2,
+  cloudColor = DEFAULT_STORM_CLOUD_COLOR,
+  dropColor = RAIN_COLOR,
+}) {
+  // useMemo тепер залежить від cloudColor — хмари перефарбуються при зміні палітри
   const tinted = useMemo(
-    () => CLOUD_TEMPLATES.map((t) => tintDarkCloudSvg(t, STORM_CLOUD_COLOR)),
-    []
+    () => CLOUD_TEMPLATES.map((t) => tintDarkCloudSvg(t, cloudColor)),
+    [cloudColor]
   );
   const drops = useMemo(() => generateDrops(Math.round(28 * intensity)), [intensity]);
 
@@ -177,7 +180,7 @@ export default function ThunderstormAnimation({ intensity = 1.2 }) {
           duration={d.duration}
           delay={d.delay}
           opacity={d.opacity}
-          color={RAIN_COLOR}
+          color={dropColor}
         />
       ))}
 

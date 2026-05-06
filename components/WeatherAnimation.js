@@ -1,5 +1,4 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
 import CloudsAnimation from './animations/CloudsAnimation';
 import RainAnimation from './animations/RainAnimation';
 import SnowAnimation from './animations/SnowAnimation';
@@ -22,16 +21,34 @@ function getAnimationKey(weatherMain, isDay) {
   return null;
 }
 
-export default function WeatherAnimation({ weatherMain, isDay }) {
+// `palette` — об'єкт від getWeatherPalette: { bg, curve, sun?, moon?, cloud?, ... }.
+// Кожна анімація отримує тільки ті поля, що вона уміє споживати; якщо в
+// палітрі поля немає — анімація використає свій fallback.
+export default function WeatherAnimation({ weatherMain, isDay, palette }) {
   const key = getAnimationKey(weatherMain, isDay);
+  const p = palette || {};
 
-  if (key === 'clouds') return <CloudsAnimation />;
-  if (key === 'rain') return <RainAnimation />;
-  if (key === 'snow') return <SnowAnimation />;
-  if (key === 'clear_day') return <SunAnimation />;
-  if (key === 'clear_night') return <MoonAnimation />;
-  if (key === 'thunderstorm') return <ThunderstormAnimation />;
-  if (key === 'fog') return <FogAnimation />;
+  if (key === 'clouds') {
+    return <CloudsAnimation color={p.cloud} />;
+  }
+  if (key === 'rain') {
+    return <RainAnimation cloudColor={p.cloud} dropColor={p.rainDrop} />;
+  }
+  if (key === 'snow') {
+    return <SnowAnimation />;
+  }
+  if (key === 'clear_day') {
+    return <SunAnimation color={p.sun} />;
+  }
+  if (key === 'clear_night') {
+    return <MoonAnimation color={p.moon} />;
+  }
+  if (key === 'thunderstorm') {
+    return <ThunderstormAnimation cloudColor={p.cloud} dropColor={p.rainDrop} />;
+  }
+  if (key === 'fog') {
+    return <FogAnimation color={p.fog} />;
+  }
 
   return null;
 }

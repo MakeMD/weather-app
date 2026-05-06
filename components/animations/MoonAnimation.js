@@ -1,4 +1,9 @@
 // components/animations/MoonAnimation.js
+// Місяць оживляють два ефекти:
+//   1. Halo — м'яке сяйво навколо, пульсує opacity (0.3 → 0.55).
+//   2. Drift — весь wrapper повільно піднімається/опускається на ±5px.
+// Обидва ефекти дуже повільні (10 і 16 секунд) — користувач не помічає
+// руху прямо, але сцена відчувається живою.
 import React, { useEffect, useMemo } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import Animated, {
@@ -11,25 +16,27 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
-import Svg, { Defs, LinearGradient, Stop, Rect, SvgXml } from 'react-native-svg';
+import { SvgXml } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const MOON_COLOR = '#E8E4D5';
-const STAR_COLOR = '#FFFFFF';
-
-const NIGHT_LUT = {
-  topColor: '#0A1628',
-  midColor: '#1A2645',
-  bottomColor: '#2D3654',
-  topOpacity: 0.7,
-  midOpacity: 0.5,
-  bottomOpacity: 0.3,
-};
+const DEFAULT_MOON_COLOR = '#E8E4D5';
+const STAR_COLOR = '#FFFFFF'; // зорі завжди білі — фізичний атрибут "зоряності"
 
 const MOON_SIZE = SCREEN_WIDTH * 0.32;
+const HALO_SIZE = MOON_SIZE * 1.6;       // halo на 60% більший за місяць
+const HALO_OFFSET = (HALO_SIZE - MOON_SIZE) / 2; // зсув щоб halo був центрований навколо місяця
+
 const TOP_OFFSET_PERCENT = 6;
 const RIGHT_OFFSET_PERCENT = 8;
+
+// Параметри "життя"
+const HALO_PULSE_DURATION = 5000;   // напівцикл; повне дихання 10 сек
+const HALO_OPACITY_MIN = 0.30;
+const HALO_OPACITY_MAX = 0.55;
+
+const DRIFT_DURATION = 8000;        // напівцикл; повний цикл 16 сек
+const DRIFT_AMOUNT = 30;             // px ±
 
 function shiftColor(hex, amount) {
   const num = parseInt(hex.slice(1), 16);
@@ -56,24 +63,20 @@ function buildMoonSvg(baseColor) {
   </svg>`;
 }
 
-function NightOverlay() {
-  return (
-    <Svg
-      style={StyleSheet.absoluteFill}
-      preserveAspectRatio="none"
-      viewBox="0 0 1 1"
-      pointerEvents="none"
-    >
-      <Defs>
-        <LinearGradient id="nightLut" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={NIGHT_LUT.topColor} stopOpacity={NIGHT_LUT.topOpacity} />
-          <Stop offset="55%" stopColor={NIGHT_LUT.midColor} stopOpacity={NIGHT_LUT.midOpacity} />
-          <Stop offset="100%" stopColor={NIGHT_LUT.bottomColor} stopOpacity={NIGHT_LUT.bottomOpacity} />
-        </LinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="1" height="1" fill="url(#nightLut)" />
-    </Svg>
-  );
+// Halo — radial gradient від кольору місяця до прозорого.
+// 3 stops: яскравіше в центрі, м'якше на краях.
+function buildHaloSvg(baseColor) {
+  return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="${baseColor}" stop-opacity="0.8"/>
+        <stop offset="35%" stop-color="${baseColor}" stop-opacity="0.4"/>
+        <stop offset="70%" stop-color="${baseColor}" stop-opacity="0.1"/>
+        <stop offset="100%" stop-color="${baseColor}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <circle cx="100" cy="100" r="100" fill="url(#halo)"/>
+  </svg>`;
 }
 
 function Star({ leftPercent, topPercent, size, twinkleDuration, twinkleDelay, baseOpacity }) {
@@ -177,16 +180,58 @@ function ShootingStar() {
   );
 }
 
-export default function MoonAnimation() {
-  const moonSvg = useMemo(() => buildMoonSvg(MOON_COLOR), []);
+export default function MoonAnimation({ color = DEFAULT_MOON_COLOR }) {
+  const moonSvg = useMemo(() => buildMoonSvg(color), [color]);
+  const haloSvg = useMemo(() => buildHaloSvg(color), [color]);
   const stars = useMemo(() => generateStars(40), []);
+
+  // Shared values для двох ефектів
+  const haloOpacity = useSharedValue(HALO_OPACITY_MIN);
+  const driftY = useSharedValue(-DRIFT_AMOUNT);
+
+  useEffect(() => {
+    // Halo: opacity дихає від MIN до MAX, sin-easing, реверс — туди-назад
+    haloOpacity.value = withRepeat(
+      withTiming(HALO_OPACITY_MAX, {
+        duration: HALO_PULSE_DURATION,
+        easing: Easing.inOut(Easing.sin),
+      }),
+      -1,
+      true
+    );
+
+    // Drift: translateY -DRIFT_AMOUNT ↔ +DRIFT_AMOUNT, теж реверс
+    driftY.value = withRepeat(
+      withTiming(DRIFT_AMOUNT, {
+        duration: DRIFT_DURATION,
+        easing: Easing.inOut(Easing.sin),
+      }),
+      -1,
+      true
+    );
+
+    return () => {
+      cancelAnimation(haloOpacity);
+      cancelAnimation(driftY);
+    };
+  }, []);
+
+  // Drift застосовується до всього wrapper (halo + moon рухаються разом)
+  const driftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: driftY.value }],
+  }));
+
+  // Halo opacity — окремо
+  const haloAnimStyle = useAnimatedStyle(() => ({
+    opacity: haloOpacity.value,
+  }));
 
   return (
     <View style={styles.container} pointerEvents="none">
-      <NightOverlay />
       {stars.map((s, i) => <Star key={i} {...s} />)}
       <ShootingStar />
-      <View
+
+      <Animated.View
         style={[
           styles.moonWrapper,
           {
@@ -195,10 +240,29 @@ export default function MoonAnimation() {
             width: MOON_SIZE,
             height: MOON_SIZE,
           },
+          driftStyle,
         ]}
       >
+        {/* Halo — позаду місяця, центрований відносно нього */}
+        <Animated.View
+          style={[
+            styles.halo,
+            {
+              width: HALO_SIZE,
+              height: HALO_SIZE,
+              top: -HALO_OFFSET,
+              left: -HALO_OFFSET,
+            },
+            haloAnimStyle,
+          ]}
+          pointerEvents="none"
+        >
+          <SvgXml xml={haloSvg} width={HALO_SIZE} height={HALO_SIZE} />
+        </Animated.View>
+
+        {/* Сам місяць — зверху halo */}
         <SvgXml xml={moonSvg} width={MOON_SIZE} height={MOON_SIZE} />
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -206,6 +270,7 @@ export default function MoonAnimation() {
 const styles = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   moonWrapper: { position: 'absolute' },
+  halo: { position: 'absolute' },
   star: { position: 'absolute' },
   shootingStarWrapper: { position: 'absolute', top: 0, left: 0, width: 4, height: 4 },
   shootingHead: {

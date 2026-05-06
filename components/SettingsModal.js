@@ -7,6 +7,7 @@ import { fonts, radius } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { t, SUPPORTED_LANGUAGES } from '../i18n';
 import { getCityName } from '../utils/cityName';
+import { haptics } from '../utils/haptics';
 
 const MAX_CITIES = 10;
 
@@ -24,6 +25,9 @@ export default function SettingsModal({
   onLanguagePress,
   onThemePress,
   onToggleUnits,
+  // ⬇️ нові пропси для глобального haptic toggle
+  hapticsEnabled,
+  onToggleHaptics,
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -41,6 +45,39 @@ export default function SettingsModal({
   // Поточні одиниці — локалізована назва
   const unitsLabel = units === 'imperial' ? t('unitsImperial') : t('unitsMetric');
 
+  // Стан haptic toggle — локалізована "Увімкн/Вимкн"
+  const hapticsLabel = hapticsEnabled ? t('on') : t('off');
+
+  // ----- Haptic-обгортки (один паттерн для всіх дій у Settings) -----
+  const handleSetDefault = (id) => {
+    haptics.light();
+    onSetDefault(id);
+  };
+  const handleAddPress = () => {
+    haptics.light();
+    onAddPress();
+  };
+  const handleLanguagePress = () => {
+    haptics.light();
+    onLanguagePress();
+  };
+  const handleThemePress = () => {
+    haptics.light();
+    onThemePress();
+  };
+  const handleToggleUnits = () => {
+    haptics.selection();
+    onToggleUnits();
+  };
+  // Нюанс для haptic-toggle: спочатку викликаємо toggle (синхронно оновлює
+  // state + module flag), потім haptics.selection(). Wrapper перевіряє
+  // module flag → ON→OFF не вібрує (бо flag вже false), OFF→ON вібрує.
+  // Це зумисне: ON→OFF "тиша" сигналізує що тепер дійсно вимкнено.
+  const handleToggleHaptics = () => {
+    onToggleHaptics();
+    haptics.selection();
+  };
+
   const renderItem = ({ item }) => {
     const isDefault = item.id === defaultCityId;
     const canRemove = !isDefault && userCities.length > 1;
@@ -55,7 +92,7 @@ export default function SettingsModal({
             {isDefault ? (
               <Text style={styles.defaultBadge}>★ {t('default')}</Text>
             ) : (
-              <TouchableOpacity onPress={() => onSetDefault(item.id)}>
+              <TouchableOpacity onPress={() => handleSetDefault(item.id)}>
                 <Text style={styles.setDefaultLink}>{t('default')}</Text>
               </TouchableOpacity>
             )}
@@ -103,7 +140,7 @@ export default function SettingsModal({
           ListFooterComponent={
             <>
               {userCities.length < MAX_CITIES && (
-                <TouchableOpacity style={styles.addButton} onPress={onAddPress}>
+                <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
                   <Text style={styles.addButtonText}>+ {t('addCity')}</Text>
                 </TouchableOpacity>
               )}
@@ -116,7 +153,7 @@ export default function SettingsModal({
                 icon="🌐"
                 label={t('language')}
                 value={langLabel}
-                onPress={onLanguagePress}
+                onPress={handleLanguagePress}
                 styles={styles}
                 showChevron
               />
@@ -125,7 +162,7 @@ export default function SettingsModal({
                 icon={themePreference === 'dark' ? '🌙' : themePreference === 'light' ? '☀️' : '🌗'}
                 label={t('theme')}
                 value={themeLabel}
-                onPress={onThemePress}
+                onPress={handleThemePress}
                 styles={styles}
                 showChevron
               />
@@ -134,7 +171,17 @@ export default function SettingsModal({
                 icon="⇄"
                 label={t('units')}
                 value={unitsLabel}
-                onPress={onToggleUnits}
+                onPress={handleToggleUnits}
+                styles={styles}
+                showChevron={false}
+              />
+
+              {/* Новий рядок — глобальний toggle Haptic feedback */}
+              <SettingRow
+                icon="📳"
+                label={t('hapticFeedback')}
+                value={hapticsLabel}
+                onPress={handleToggleHaptics}
                 styles={styles}
                 showChevron={false}
               />
@@ -166,7 +213,14 @@ function SettingRow({ icon, label, value, onPress, styles, showChevron }) {
 function confirmRemove(id, onRemove) {
   Alert.alert(t('remove') + '?', '', [
     { text: t('cancel'), style: 'cancel' },
-    { text: t('remove'), style: 'destructive', onPress: () => onRemove(id) },
+    {
+      text: t('remove'),
+      style: 'destructive',
+      onPress: () => {
+        haptics.warning(); // вібрація-попередження перед руйнівною дією
+        onRemove(id);
+      },
+    },
   ]);
 }
 

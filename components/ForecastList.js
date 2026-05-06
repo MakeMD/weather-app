@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import ForecastCard from './ForecastCard';
 import { groupForecastByDay, getDayKey } from '../utils/forecast';
 import { useTheme } from '../contexts/ThemeContext';
+import { haptics } from '../utils/haptics';
 
 export default function ForecastList({ forecastData, loading, selectedDate, onSelectDay }) {
   const { colors } = useTheme();
@@ -23,6 +24,14 @@ export default function ForecastList({ forecastData, loading, selectedDate, onSe
 
   const visibleDays = days.slice(0, 5);
 
+  // Тап по дню = зміна вибору в picker → haptics.selection().
+  // Підходить як для toggle-on (вибрати день), так і для toggle-off
+  // (повторний тап знімає вибір) — обидва це "перемикання вибору".
+  const handlePress = (day) => {
+    haptics.selection();
+    onSelectDay(day);
+  };
+
   return (
     <View style={styles.list}>
       {visibleDays.map((day) => {
@@ -34,7 +43,7 @@ export default function ForecastList({ forecastData, loading, selectedDate, onSe
             day={day}
             dayKey={dayKey}
             isSelected={isSelected}
-            onPress={() => onSelectDay(day)}
+            onPress={() => handlePress(day)}
           />
         );
       })}

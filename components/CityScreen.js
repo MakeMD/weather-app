@@ -9,7 +9,7 @@ import SunMinMaxRow from './SunMinMaxRow';
 import HourlyChart from './HourlyChart';
 import { isDayTime } from '../utils/format';
 import { useTheme } from '../contexts/ThemeContext';
-import { layout } from '../styles/theme';
+import { darkColors, layout } from '../styles/theme';
 import { getWeatherPalette } from '../utils/weatherPalette';
 
 const { width: SCREEN_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
@@ -29,7 +29,7 @@ export default function CityScreen({
   forecastLoading,
 }) {
   const [selectedDay, setSelectedDay] = useState(null);
-  const { scheme } = useTheme();
+  const { colors } = useTheme();
 
   useEffect(() => {
     setSelectedDay(null);
@@ -38,8 +38,9 @@ export default function CityScreen({
   const currentMain = weatherData?.weather?.[0]?.main;
   const selectedDate = selectedDay ? selectedDay.date : null;
 
-  // Палітра поточного міста — фарбує фон ScrollView
-  const isDark = scheme === 'dark';
+  // Палітра потрібна локально для curveColor у HourlyChart
+  // (фон сцени вже встановлюється на App-level через SafeArea bg).
+  const isDark = colors.background === darkColors.background;
   const isDay = isDayTime(weatherData);
   const palette = getWeatherPalette(currentMain, isDay, isDark);
 
@@ -58,8 +59,12 @@ export default function CityScreen({
     forecastData?.list?.length >= 7;
 
   return (
+    // ⚠️ ScrollView навмисно БЕЗ backgroundColor — щоб FogVeil
+    // (атмосферний шар на App-level) був видно крізь нього.
+    // SafeArea bg в App.js дає правильний колір через інтерполяцію
+    // при свайпі між містами.
     <ScrollView
-      style={[styles.scroll, { backgroundColor: palette.bg }]}
+      style={styles.scroll}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.page}>
@@ -77,6 +82,7 @@ export default function CityScreen({
           <WeatherAnimation
             weatherMain={currentMain}
             isDay={isDay}
+            palette={palette}
           />
         </View>
 
@@ -124,6 +130,7 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     width: SCREEN_WIDTH,
+    // backgroundColor НЕ виставляємо — лишаємо прозорим.
   },
   page: {
     height: PAGE_HEIGHT,

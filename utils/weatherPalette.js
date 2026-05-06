@@ -1,30 +1,92 @@
 // utils/weatherPalette.js
-// Палітри під типи погоди — тонкі тональні зсуви в межах теплого беж-сімейства
-// (light) або глибокого темно-кавового (dark). Використовується в CityScreen
-// для підкрутки bg + accent (зокрема колір кривої HourlyChart).
+// Палітри під типи погоди — фон, крива HourlyChart, і tints для анімацій.
+// Кожна (theme, weather) пара має свої tints inline.
+//
+// Спеціальний випадок — clearNight: оскільки на рівні App.js ми ФОРСИМО
+// dark тему коли видиме місто = ніч, light.clearNight тепер дублює
+// dark.clearNight (bg темний). Це гарантує що навіть якщо хтось викличе
+// палітру в light contexті — фон узгоджується з решта UI у dark mode.
 
 const PALETTES = {
   light: {
-    clearDay:     { bg: '#F5F1E8', curve: '#D08247' }, // поточний — теплий кремовий
-    clearNight:   { bg: '#E5DFCE', curve: '#7A6D55' }, // приглушений вечірній
-    cloudy:       { bg: '#E5E2D9', curve: '#9C8B73' }, // нейтральний перлинний
-    rain:         { bg: '#D6DAD4', curve: '#7A8B82' }, // прохолодний шавлієвий
-    snow:         { bg: '#ECEEE9', curve: '#9DA9AC' }, // холодний майже-білий
-    thunderstorm: { bg: '#A89C82', curve: '#3D362C' }, // драматичний оливковий
-    fog:          { bg: '#DEDDD7', curve: '#A09787' }, // туманний нейтральний
+    clearDay: {
+      bg: '#F5F1E8',
+      curve: '#D08247',
+      sun: '#FFD27A',
+    },
+    clearNight: {
+      // Темний bg — UI всеодно буде у dark mode (App.js override)
+      bg: '#161412',
+      curve: '#7A8AB5',
+      moon: '#E8E4D5',
+    },
+    cloudy: {
+      bg: '#E5E2D9',
+      curve: '#9C8B73',
+      cloud: '#9A8F7E',
+    },
+    rain: {
+      bg: '#D6DAD4',
+      curve: '#7A8B82',
+      cloud: '#6B6258',
+      rainDrop: '#9FB0BF',
+    },
+    snow: {
+      bg: '#ECEEE9',
+      curve: '#9DA9AC',
+    },
+    thunderstorm: {
+      bg: '#A89C82',
+      curve: '#3D362C',
+      cloud: '#4A4339',
+      rainDrop: '#9FB0BF',
+    },
+    fog: {
+      bg: '#DEDDD7',
+      curve: '#A09787',
+      fog: '#C8C4BC',
+    },
   },
   dark: {
-    clearDay:     { bg: '#1C1A17', curve: '#E8A66B' }, // поточний dark + теплий accent
-    clearNight:   { bg: '#161412', curve: '#7A8AB5' }, // глибша ніч + холодний акцент
-    cloudy:       { bg: '#1F1D1A', curve: '#A89A82' },
-    rain:         { bg: '#181D1B', curve: '#9CADA5' },
-    snow:         { bg: '#1A1D1B', curve: '#B8C0BD' },
-    thunderstorm: { bg: '#0F0D0B', curve: '#E0AB60' }, // найглибша + бурштиновий бзик
-    fog:          { bg: '#1B1916', curve: '#A89A82' },
+    clearDay: {
+      bg: '#1C1A17',
+      curve: '#E8A66B',
+      sun: '#FFD27A',
+    },
+    clearNight: {
+      bg: '#161412',
+      curve: '#7A8AB5',
+      moon: '#E8E4D5',
+    },
+    cloudy: {
+      bg: '#1F1D1A',
+      curve: '#A89A82',
+      cloud: '#9A8F7E',
+    },
+    rain: {
+      bg: '#181D1B',
+      curve: '#9CADA5',
+      cloud: '#6B6258',
+      rainDrop: '#9FB0BF',
+    },
+    snow: {
+      bg: '#1A1D1B',
+      curve: '#B8C0BD',
+    },
+    thunderstorm: {
+      bg: '#0F0D0B',
+      curve: '#E0AB60',
+      cloud: '#4A4339',
+      rainDrop: '#9FB0BF',
+    },
+    fog: {
+      bg: '#1B1916',
+      curve: '#A89A82',
+      fog: '#C8C4BC',
+    },
   },
 };
 
-// OWM weather.main → ключ палітри
 function paletteKey(weatherMain, isDay) {
   switch (weatherMain) {
     case 'Clear':
@@ -53,7 +115,6 @@ function paletteKey(weatherMain, isDay) {
   }
 }
 
-// Повертає { bg, curve } для поточної погоди + теми
 export function getWeatherPalette(weatherMain, isDay, isDark = false) {
   const key = paletteKey(weatherMain, isDay);
   return PALETTES[isDark ? 'dark' : 'light'][key];
