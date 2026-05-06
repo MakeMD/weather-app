@@ -19,6 +19,13 @@ import { weatherCache, forecastCache } from './utils/cache';
 import { isDayTime } from './utils/format';
 import { getWeatherPalette } from './utils/weatherPalette';
 import { haptics } from './utils/haptics';
+import {
+  setupNotificationHandler,
+  scheduleTomorrowAlert,
+  cancelWeatherAlerts,
+  getNotificationsPermissionStatus,
+} from './utils/notifications';
+import { getCityName } from './utils/cityName';
 import { lightColors, darkColors } from './styles/theme';
 import CityHeader from './components/CityHeader';
 import CityScreen from './components/CityScreen';
@@ -31,16 +38,18 @@ import { ThemeProvider, useTheme, ThemeContext } from './contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// SafeAreaView з підтримкою animated styles — щоб inline-bg плавно інтерполювався
 const AnimatedSafeAreaView = Animated.createAnimatedComponent(SafeAreaView);
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// ⬇️ Викликається ОДИН раз при завантаженні модуля. Конфігурує foreground
+// behavior для notifications — без цього якщо нотифікація прийде поки додаток
+// відкритий, користувач її не побачить.
+setupNotificationHandler();
+
 const MIN_SPLASH_DURATION_MS = 1500;
 const MODAL_TRANSITION_MS = 300;
 
-// Атмосферні погоди — для них рендериться FogVeil на App-level (повноекранний overlay).
-// Локальні bands (туманні смуги) лишаються в FogAnimation в межах CityScreen.
 const ATMOSPHERIC_WEATHER = [
   'Mist', 'Fog', 'Haze', 'Smoke', 'Dust', 'Sand', 'Ash', 'Squall', 'Tornado',
 ];
@@ -108,8 +117,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     forecastInitial
   );
 
-  // Pull-to-refresh: тригериться коли користувач відпускає палець після
-  // того, як перетягнув вниз за поріг. Medium impact — підтверджує дію.
   const handleRefresh = useCallback(() => {
     haptics.medium();
     refresh();
@@ -175,8 +182,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     setTimeout(() => setShowSettings(true), MODAL_TRANSITION_MS);
   };
 
-  // Свайп завершився — момент "snap" до нового міста. Light impact —
-  // як перегортання сторінки. Спрацьовує лише при реальній зміні index'а.
   const onMomentumScrollEnd = (e) => {
     const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (newIndex !== cm.currentIndex && newIndex >= 0 && newIndex < cm.userCities.length) {
@@ -212,7 +217,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   const displayedMain = displayedWeather.data?.weather?.[0]?.main;
   const displayedIsDay = isDayTime(displayedWeather.data);
 
-  // ----- Theme Override на основі видимого міста -----
   const isNightOverride = baseScheme !== 'dark' && !displayedIsDay && !!displayedWeather.data;
   const effectiveIsDark = baseIsDark || isNightOverride;
 
@@ -230,8 +234,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const palette = getWeatherPalette(displayedMain, displayedIsDay, effectiveIsDark);
-
-  // ----- Атмосферна погода (туман/мряка/etc) → FogVeil на повний екран -----
   const isAtmospheric = !!displayedMain && ATMOSPHERIC_WEATHER.includes(displayedMain);
 
   const paletteBgs = cm.userCities.map((c) => {
@@ -255,22 +257,83 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
 
   const safeAreaBg = isSingleCity ? palette.bg : (interpolatedBg ?? palette.bg);
 
+  // ============================================================
+  // 🔔 WEATHER NOTIFICATIONS — scheduling logic
+  // ============================================================
+  // Логіка: коли forecast для DEFAULT-міста готовий і користувач увімкнув
+  // notifications → плануємо tomorrow alert на 20:00.
+  //
+  // Триggers re-schedule:
+  //   - notificationsEnabled toggled
+  //   - default city change
+  //   - language/units change (for content)
+  //   - forecast refresh (через fingerprint)
+  //
+  // Коли notificationsEnabled=false → cancel all scheduled.
+
+  const defaultCity = useMemo(
+    () => cm.userCities.find((c) => c.id === cm.defaultCityId),
+    [cm.userCities, cm.defaultCityId]
+  );
+
+  const defaultForecast = defaultCity ? getForecastFor(defaultCity) : null;
+
+  // Fingerprint для виявлення оновлень forecast — використовуємо timestamp
+  // першого item'а (змінюється при кожному реальному refresh).
+  const defaultForecastFp = defaultForecast?.data?.list?.[0]?.dt ?? null;
+
+  // Reschedule при зміні preference / forecast / units / language
+  useEffect(() => {
+    if (!cm.notificationsEnabled) return;
+    if (!defaultCity) return;
+    if (!defaultForecast?.data?.list?.length) return;
+
+    const cityName = getCityName(defaultCity, cm.language);
+    scheduleTomorrowAlert(defaultForecast.data, cityName, cm.units)
+      .then((result) => {
+        console.log('[notifications]', result, 'for', defaultCity.id);
+      })
+      .catch((e) => console.log('[notifications] error', e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    cm.notificationsEnabled,
+    cm.defaultCityId,
+    cm.language,
+    cm.units,
+    defaultForecastFp,
+  ]);
+
+  // Cancel при вимкненні toggle
+  useEffect(() => {
+    if (!cm.notificationsEnabled) {
+      cancelWeatherAlerts();
+    }
+  }, [cm.notificationsEnabled]);
+
+  // На mount: якщо notificationsEnabled=true, але користувач відкликав
+  // permission в системних Settings поки додаток був закритий — виявляємо
+  // це і автоматично вимикаємо toggle. Без цього UI брехав би.
+  useEffect(() => {
+    if (!cm.notificationsEnabled) return;
+    let cancelled = false;
+    (async () => {
+      const status = await getNotificationsPermissionStatus();
+      if (cancelled) return;
+      if (status !== 'granted') {
+        cm.setNotificationsEnabled(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <ThemeContext.Provider value={effectiveTheme}>
       <AnimatedSafeAreaView
         style={[styles.safeArea, { backgroundColor: safeAreaBg }]}
         edges={['top', 'bottom', 'left', 'right']}
       >
-        {/* ======================================================
-            АТМОСФЕРНИЙ ШАР — вуаль туману
-            ======================================================
-            Render order у RN = z-order. FogVeil рендериться ПЕРШИМ
-            всередині SafeArea, тому опиняється:
-              ↑ Modals (окремий root, найвище)
-              ↑ headerContainer + FlatList/ScrollView (UI поверх вуалі)
-              ↑ FogVeil  ← ТУТ — атмосферний шар
-              ↑ SafeArea bg (інтерпольований колір палітри)
-            ====================================================== */}
+        {/* Атмосферний шар (між SafeArea bg і UI) */}
         {isAtmospheric && <FogVeil color={palette.fog} />}
 
         <View style={styles.headerContainer}>
@@ -347,9 +410,11 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
           onLanguagePress={handleLanguagePress}
           onThemePress={handleThemePress}
           onToggleUnits={cm.toggleUnits}
-          // ⬇️ нові пропси для глобального haptic toggle
           hapticsEnabled={cm.hapticsEnabled}
           onToggleHaptics={cm.toggleHaptics}
+          // ⬇️ нові пропси для weather alerts
+          notificationsEnabled={cm.notificationsEnabled}
+          onSetNotifications={cm.setNotificationsEnabled}
         />
 
         <AddCityModal

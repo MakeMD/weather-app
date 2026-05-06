@@ -4,7 +4,6 @@ import { ukrainianCities } from '../data/cities';
 import { loadUserData, saveUserData } from '../data/storage';
 import { findClosestCity } from '../utils/geo';
 import { getDeviceLanguage, setLocale } from '../i18n';
-// ⬇️ Імпортуємо як syncHapticsModule, щоб не плутатись з React-state-сетером
 import { setHapticsEnabled as syncHapticsModule } from '../utils/haptics';
 
 function refreshLibraryCities(savedCities) {
@@ -26,8 +25,10 @@ export function useCityManager() {
   const [language, setLanguageState] = useState('en');
   const [themePreference, setThemePreferenceState] = useState('auto');
   const [units, setUnitsState] = useState('metric');
-  // ⬇️ Глобальний toggle haptic feedback. Default ON.
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  // ⬇️ Глобальний toggle weather alerts. Default OFF — щоб не питати дозвіл
+  // на старті без причини. Користувач свідомо вмикає в Settings.
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -47,13 +48,16 @@ export function useCityManager() {
         setUnitsState(storedUnits);
       }
 
-      // Hydrate haptics: дістаємо з storage, або дефолтимо на true.
-      // Sync утиліту haptics одразу — щоб глобальний flag відповідав
-      // користувацькому преференсу ще до першого haptic-виклику.
       const storedHaptics = stored?.hapticsEnabled;
       const initialHaptics = typeof storedHaptics === 'boolean' ? storedHaptics : true;
       setHapticsEnabledState(initialHaptics);
       syncHapticsModule(initialHaptics);
+
+      // Hydrate notifications preference. Default OFF (свідомий opt-in).
+      const storedNotif = stored?.notificationsEnabled;
+      if (typeof storedNotif === 'boolean') {
+        setNotificationsEnabledState(storedNotif);
+      }
 
       if (stored?.userCities?.length > 0) {
         const refreshed = refreshLibraryCities(stored.userCities);
@@ -135,7 +139,8 @@ export function useCityManager() {
       language,
       themePreference,
       units,
-      hapticsEnabled, // ← персистимо
+      hapticsEnabled,
+      notificationsEnabled, // ← персистимо
     });
   }, [
     userCities,
@@ -144,7 +149,8 @@ export function useCityManager() {
     language,
     themePreference,
     units,
-    hapticsEnabled, // ← у deps
+    hapticsEnabled,
+    notificationsEnabled, // ← у deps
     storageLoaded,
   ]);
 
@@ -204,14 +210,16 @@ export function useCityManager() {
     setUnitsState((u) => (u === 'metric' ? 'imperial' : 'metric'));
   };
 
-  // Toggle haptic. Синхронно: оновлюємо React state + module flag.
-  // Module flag оновлюється ВІДРАЗУ (не чекаємо на ре-рендер) — щоб
-  // подальший haptics.selection() в onPress handler'і вже бачив
-  // правильне значення.
   const toggleHaptics = () => {
     const next = !hapticsEnabled;
     setHapticsEnabledState(next);
     syncHapticsModule(next);
+  };
+
+  // Set notifications. Передаємо boolean.
+  // Власне scheduling/cancel робить App.js (через useEffect на цей стейт).
+  const setNotificationsEnabled = (value) => {
+    setNotificationsEnabledState(!!value);
   };
 
   return {
@@ -224,6 +232,7 @@ export function useCityManager() {
     themePreference,
     units,
     hapticsEnabled,
+    notificationsEnabled,
     goToPrevious,
     goToNext,
     setIndex: setCurrentIndex,
@@ -236,5 +245,6 @@ export function useCityManager() {
     setUnits,
     toggleUnits,
     toggleHaptics,
+    setNotificationsEnabled,
   };
 }

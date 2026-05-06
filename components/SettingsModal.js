@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Modal, View, Text, TouchableOpacity, FlatList, Alert, StyleSheet } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, FlatList, Alert, Linking, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import CityRow from './CityRow';
 import { scaleFont } from '../utils/responsive';
@@ -8,6 +8,10 @@ import { useTheme } from '../contexts/ThemeContext';
 import { t, SUPPORTED_LANGUAGES } from '../i18n';
 import { getCityName } from '../utils/cityName';
 import { haptics } from '../utils/haptics';
+import {
+  ensureNotificationsPermission,
+  cancelWeatherAlerts,
+} from '../utils/notifications';
 
 const MAX_CITIES = 10;
 
@@ -25,30 +29,28 @@ export default function SettingsModal({
   onLanguagePress,
   onThemePress,
   onToggleUnits,
-  // ⬇️ нові пропси для глобального haptic toggle
   hapticsEnabled,
   onToggleHaptics,
+  // ⬇️ нові пропси для weather alerts
+  notificationsEnabled,
+  onSetNotifications,
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  // Поточна мова — назва і прапор
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === language);
   const langLabel = currentLang ? `${currentLang.flag} ${currentLang.name}` : language;
 
-  // Поточна тема — локалізована назва
   const themeLabel =
     themePreference === 'light' ? t('themeLight')
     : themePreference === 'dark' ? t('themeDark')
     : t('themeAuto');
 
-  // Поточні одиниці — локалізована назва
   const unitsLabel = units === 'imperial' ? t('unitsImperial') : t('unitsMetric');
-
-  // Стан haptic toggle — локалізована "Увімкн/Вимкн"
   const hapticsLabel = hapticsEnabled ? t('on') : t('off');
+  const notificationsLabel = notificationsEnabled ? t('on') : t('off');
 
-  // ----- Haptic-обгортки (один паттерн для всіх дій у Settings) -----
+  // ----- Haptic-обгортки -----
   const handleSetDefault = (id) => {
     haptics.light();
     onSetDefault(id);
@@ -69,13 +71,43 @@ export default function SettingsModal({
     haptics.selection();
     onToggleUnits();
   };
-  // Нюанс для haptic-toggle: спочатку викликаємо toggle (синхронно оновлює
-  // state + module flag), потім haptics.selection(). Wrapper перевіряє
-  // module flag → ON→OFF не вібрує (бо flag вже false), OFF→ON вібрує.
-  // Це зумисне: ON→OFF "тиша" сигналізує що тепер дійсно вимкнено.
   const handleToggleHaptics = () => {
     onToggleHaptics();
     haptics.selection();
+  };
+
+  // ----- Weather alerts toggle з permission flow -----
+  // Складніший case ніж haptics: перш ніж увімкнути, треба попросити дозвіл
+  // системи. Якщо denied — показуємо Alert з кнопкою "Відкрити налаштування".
+  const handleToggleNotifications = async () => {
+    haptics.selection();
+
+    if (notificationsEnabled) {
+      // Вимикаємо: оновлюємо state + cancel заплановане
+      onSetNotifications(false);
+      await cancelWeatherAlerts();
+      return;
+    }
+
+    // Вмикаємо: спершу просимо дозвіл
+    const status = await ensureNotificationsPermission();
+
+    if (status === 'granted') {
+      // Дозвіл є — вмикаємо preference. App.js useEffect зробить schedule
+      // як тільки forecast для default-міста буде готовий.
+      onSetNotifications(true);
+    } else {
+      // denied — повідомляємо що треба зайти в системні Settings.
+      // На iOS після denied повторне запитання неможливе (обмеження ОС).
+      Alert.alert(
+        t('notif_permission_denied_title'),
+        t('notif_permission_denied_body'),
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('openSettings'), onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
   };
 
   const renderItem = ({ item }) => {
@@ -176,12 +208,21 @@ export default function SettingsModal({
                 showChevron={false}
               />
 
-              {/* Новий рядок — глобальний toggle Haptic feedback */}
               <SettingRow
                 icon="📳"
                 label={t('hapticFeedback')}
                 value={hapticsLabel}
                 onPress={handleToggleHaptics}
+                styles={styles}
+                showChevron={false}
+              />
+
+              {/* Новий рядок — глобальний toggle weather alerts */}
+              <SettingRow
+                icon="🔔"
+                label={t('weatherAlerts')}
+                value={notificationsLabel}
+                onPress={handleToggleNotifications}
                 styles={styles}
                 showChevron={false}
               />
@@ -217,7 +258,7 @@ function confirmRemove(id, onRemove) {
       text: t('remove'),
       style: 'destructive',
       onPress: () => {
-        haptics.warning(); // вібрація-попередження перед руйнівною дією
+        haptics.warning();
         onRemove(id);
       },
     },
