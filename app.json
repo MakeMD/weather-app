@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.makemd.weatherapp",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/branding/adaptive-icon.png",
         "backgroundColor": "#F5F1E8"
@@ -36,7 +37,13 @@
       }
     },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-notifications",
+        {
+          "color": "#3D3D3D"
+        }
+      ]
     ]
   }
 }
