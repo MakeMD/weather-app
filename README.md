@@ -1,5 +1,7 @@
 # Weather App
 
+**English** · [Українська](README.uk.md)
+
 A hand-illustrated weather app for iOS and Android, built with Expo + React Native. Each city has its own custom 3D illustration, layered with native weather animations (sun, rain, snow, fog, thunderstorms) and a palette that adapts to the conditions and time of day.
 
 ![Expo SDK](https://img.shields.io/badge/Expo-SDK%2054-000020?logo=expo&logoColor=white)
