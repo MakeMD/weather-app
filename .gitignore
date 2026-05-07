@@ -27,4 +27,4 @@ yarn-error.*
 assets/cities_source/
 
 # Релізи
-build
+build/
