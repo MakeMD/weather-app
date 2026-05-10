@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   ScrollView,
-  RefreshControl,
   Dimensions,
   Animated,
 } from 'react-native';
@@ -190,6 +189,10 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
     }
   };
 
+  // renderItem для горизонтального FlatList. Передаємо в CityScreen
+  // refreshing+onRefresh — на iOS вони увімкнуть pull-to-refresh у внутрішньому
+  // ScrollView CityScreen; на Android просто проігноруються (там оновлення
+  // через кнопку ↻ у CityHeader).
   const renderItem = ({ item }) => {
     const { data, loading, error } = getWeatherFor(item);
     const forecast = getForecastFor(item);
@@ -203,6 +206,8 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
         error={error}
         forecastData={forecast.data}
         forecastLoading={forecast.loading}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
       />
     );
   };
@@ -263,7 +268,7 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
   // Логіка: коли forecast для DEFAULT-міста готовий і користувач увімкнув
   // notifications → плануємо tomorrow alert на 20:00.
   //
-  // Триggers re-schedule:
+  // Триггери re-schedule:
   //   - notificationsEnabled toggled
   //   - default city change
   //   - language/units change (for content)
@@ -345,16 +350,28 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
             onPrevious={cm.goToPrevious}
             onNext={cm.goToNext}
             onSettings={() => setShowSettings(true)}
+            // ⬇️ Refresh-стан + колбек. На Android CityHeader рендерить
+            // кнопку ↻ (умова всередині), на iOS просто ігнорує (бо там
+            // pull-to-refresh у внутрішньому ScrollView CityScreen).
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
           />
         </View>
 
+        {/*
+          ⚠️ ВАЖЛИВЕ архітектурне рішення (з чекпоінту #7):
+          RefreshControl ТУТ більше не використовується НА ЖОДНІЙ платформі.
+          На Android він конфліктував з peek HourlyChart (SwipeRefreshLayout
+          ловив жест закриття peek як refresh). На iOS — переїхав у
+          внутрішній ScrollView CityScreen, де працює коректно з peek.
+
+          Якщо колись захочеться повернути pull-to-refresh у горизонтальний
+          FlatList — треба пам'ятати про цей баг. Краще не повертати.
+        */}
         {isSingleCity ? (
           <ScrollView
             contentContainerStyle={styles.singleCityContent}
             showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text} />
-            }
           >
             <CityScreen
               city={cm.currentCity}
@@ -365,6 +382,8 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
               error={currentWeather.error}
               forecastData={currentForecast.data}
               forecastLoading={currentForecast.loading}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
             />
           </ScrollView>
         ) : (
@@ -388,9 +407,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
               offset: SCREEN_WIDTH * index,
               index,
             })}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.text} />
-            }
           />
         )}
 

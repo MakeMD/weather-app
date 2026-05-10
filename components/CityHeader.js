@@ -71,7 +71,19 @@ export default function CityHeader({
             <Text style={styles.arrow}>‹</Text>
           </TouchableOpacity>
         )}
-        <Text style={styles.name} numberOfLines={1}>
+        {/* adjustsFontSizeToFit + minimumFontScale={0.75} — автоматично
+            зменшує шрифт назви якщо вона не влазить у доступну ширину.
+            Без цього на вузьких пристроях типу Galaxy S21 (384dp) довгі
+            слова на кшталт "Хмельницький" обрізалися крапками.
+            minimumFontScale обмежує наскільки можна зменшувати: 0.75 ⇒
+            мінімум ~15px (від базових 20). Для коротких назв ("Київ",
+            "Львів") поведінка не змінюється — фіча мовчить. */}
+        <Text
+          style={styles.name}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
+        >
           {displayName} {isDefault && <Text style={styles.pin}>📍</Text>}
         </Text>
         {showArrows && (

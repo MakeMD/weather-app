@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import { View, ScrollView, RefreshControl, StyleSheet, Dimensions, Platform } from 'react-native';
 import WeatherDisplay from './WeatherDisplay';
 import CityImage from './CityImage';
 import WeatherDetails from './WeatherDetails';
@@ -18,6 +18,12 @@ const { width: SCREEN_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
 // Решта простору внизу = layout.hourlyPeek, де визирає шапка плашки.
 const PAGE_HEIGHT = WINDOW_HEIGHT - layout.safeAreaOffset - layout.hourlyPeek;
 
+// Pull-to-refresh лише на iOS. На Android RefreshControl (нативний
+// SwipeRefreshLayout) конфліктує з peek HourlyChart — жест закриття peek
+// сприймається як refresh. Деталі — у чекпоінті #7. На Android оновлення
+// відбувається через явну кнопку ↻ у CityHeader.
+const IS_IOS = Platform.OS === 'ios';
+
 export default function CityScreen({
   city,
   weatherData,
@@ -27,6 +33,8 @@ export default function CityScreen({
   units,
   forecastData,
   forecastLoading,
+  refreshing = false,
+  onRefresh,
 }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const { colors } = useTheme();
@@ -58,6 +66,18 @@ export default function CityScreen({
     !error &&
     forecastData?.list?.length >= 7;
 
+  // RefreshControl активується ЛИШЕ на iOS і лише якщо передали onRefresh.
+  // На Android повертаємо undefined — тоді ScrollView не реєструє жест
+  // pull-to-refresh, і peek HourlyChart закривається без помилкового refresh.
+  const refreshControl =
+    IS_IOS && onRefresh ? (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        tintColor={colors.text}
+      />
+    ) : undefined;
+
   return (
     // ⚠️ ScrollView навмисно БЕЗ backgroundColor — щоб FogVeil
     // (атмосферний шар на App-level) був видно крізь нього.
@@ -66,6 +86,7 @@ export default function CityScreen({
     <ScrollView
       style={styles.scroll}
       showsVerticalScrollIndicator={false}
+      refreshControl={refreshControl}
     >
       <View style={styles.page}>
         <WeatherDisplay
