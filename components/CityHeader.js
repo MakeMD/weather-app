@@ -1,10 +1,25 @@
 import { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { getCityName } from '../utils/cityName';
 import { scaleFont } from '../utils/responsive';
 import { fonts } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
 import { haptics } from '../utils/haptics';
+
+// На Android рендеримо кнопку "оновити" біля ⚙️.
+// На iOS її НЕ показуємо — там працює рідний pull-to-refresh
+// (через RefreshControl у ScrollView CityScreen). Це навмисне
+// Platform-розгалуження: на Android nested ScrollView у горизонтальному
+// FlatList ламає RefreshControl (бачили на peek HourlyChart), тому
+// для Android надійніший варіант — явна кнопка.
+const IS_ANDROID = Platform.OS === 'android';
 
 export default function CityHeader({
   city,
@@ -14,14 +29,17 @@ export default function CityHeader({
   onPrevious,
   onNext,
   onSettings,
+  refreshing = false,
+  onRefresh,
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const displayName = getCityName(city, language);
 
-  // Haptic-обгортки: light на стрілках (як snap при свайпі) і на ⚙️ (open settings).
-  // Optional chaining гарантує що якщо prop не передано — нічого не падає.
+  const showRefreshButton = IS_ANDROID && !!onRefresh;
+
+  // Haptic-обгортки: light на стрілках і ⚙️, medium на refresh (значуща дія).
   const handlePrevious = () => {
     haptics.light();
     onPrevious?.();
@@ -34,10 +52,18 @@ export default function CityHeader({
     haptics.light();
     onSettings?.();
   };
+  const handleRefresh = () => {
+    if (refreshing) return;
+    haptics.medium();
+    onRefresh?.();
+  };
 
   return (
     <View style={styles.container}>
-      <View style={styles.left} />
+      {/* Лівий слот має ту саму ширину що правий — це утримує назву по центру.
+          На Android правий слот ширший (бо містить ↻ + ⚙️), тому й ліве
+          поле розширюється для симетрії. */}
+      <View style={[styles.side, showRefreshButton && styles.sideWide]} />
 
       <View style={styles.center}>
         {showArrows && (
@@ -55,8 +81,27 @@ export default function CityHeader({
         )}
       </View>
 
-      <View style={styles.right}>
+      <View style={[styles.side, showRefreshButton && styles.sideWide, styles.right]}>
+        {showRefreshButton && (
+          <TouchableOpacity
+            onPress={handleRefresh}
+            hitSlop={12}
+            disabled={refreshing}
+            accessibilityLabel="Оновити погоду"
+            accessibilityRole="button"
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={colors.text} />
+            ) : (
+              // Окремий стиль iconRefresh з явним color: colors.text —
+              // ↻ це звичайний Unicode-символ (не emoji), без color він
+              // на Android рендериться чорним і не видно в темній темі.
+              <Text style={styles.iconRefresh}>↻</Text>
+            )}
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={handleSettings} hitSlop={12}>
+          {/* ⚙️ — emoji, має власні кольори, color у стилі не потрібен. */}
           <Text style={styles.icon}>⚙️</Text>
         </TouchableOpacity>
       </View>
@@ -71,8 +116,16 @@ const createStyles = (colors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
     },
-    left: { width: 40 },
-    right: { width: 40, alignItems: 'flex-end' },
+    // Дефолтна ширина бічного слоту (iOS / коли тільки ⚙️)
+    side: { width: 40 },
+    // Розширений слот — коли на Android рендериться ↻ + ⚙️ поряд
+    sideWide: { width: 70 },
+    right: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 14,
+    },
     center: {
       flex: 1,
       flexDirection: 'row',
@@ -80,7 +133,17 @@ const createStyles = (colors) =>
       justifyContent: 'center',
       gap: 8,
     },
+    // Стиль для emoji-іконок (⚙️ і подібних). color НЕ задаємо —
+    // emoji мають власні кольори.
     icon: { fontSize: scaleFont(20) },
+    // Стиль для текстових символів-іконок (↻). ОБОВ'ЯЗКОВО color
+    // прив'язаний до теми, інакше на Android буде дефолтний чорний
+    // і у темній темі іконка зникає на темному фоні.
+    iconRefresh: {
+      fontSize: scaleFont(20),
+      color: colors.text,
+      fontFamily: fonts.bold,
+    },
     arrow: {
       fontSize: scaleFont(28),
       color: colors.text,
