@@ -13,7 +13,8 @@ A hand-illustrated weather app for iOS and Android, built with Expo + React Nati
 
 ## Screenshots
 
-> _Coming soon — add screenshots from a physical device here._
+<img width="447" height="993" alt="Screenshot 2026-05-10 162959" src="https://github.com/user-attachments/assets/2a752171-dc2e-472c-b3c4-c1ce25748815" />
+
 
 ---
 
