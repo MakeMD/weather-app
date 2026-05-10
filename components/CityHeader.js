@@ -25,9 +25,6 @@ export default function CityHeader({
   city,
   language,
   isDefault,
-  showArrows,
-  onPrevious,
-  onNext,
   onSettings,
   refreshing = false,
   onRefresh,
@@ -39,15 +36,7 @@ export default function CityHeader({
 
   const showRefreshButton = IS_ANDROID && !!onRefresh;
 
-  // Haptic-обгортки: light на стрілках і ⚙️, medium на refresh (значуща дія).
-  const handlePrevious = () => {
-    haptics.light();
-    onPrevious?.();
-  };
-  const handleNext = () => {
-    haptics.light();
-    onNext?.();
-  };
+  // Haptic-обгортки: light на ⚙️, medium на refresh (значуща дія).
   const handleSettings = () => {
     haptics.light();
     onSettings?.();
@@ -66,18 +55,16 @@ export default function CityHeader({
       <View style={[styles.side, showRefreshButton && styles.sideWide]} />
 
       <View style={styles.center}>
-        {showArrows && (
-          <TouchableOpacity onPress={handlePrevious} hitSlop={12}>
-            <Text style={styles.arrow}>‹</Text>
-          </TouchableOpacity>
-        )}
-        {/* adjustsFontSizeToFit + minimumFontScale={0.75} — автоматично
-            зменшує шрифт назви якщо вона не влазить у доступну ширину.
-            Без цього на вузьких пристроях типу Galaxy S21 (384dp) довгі
-            слова на кшталт "Хмельницький" обрізалися крапками.
-            minimumFontScale обмежує наскільки можна зменшувати: 0.75 ⇒
-            мінімум ~15px (від базових 20). Для коротких назв ("Київ",
-            "Львів") поведінка не змінюється — фіча мовчить. */}
+        {/* Навігація між містами — ТІЛЬКИ горизонтальний свайп FlatList'а.
+            Стрілки ‹ › прибрані як residual з ранніх дизайнів — сучасні
+            weather-додатки (Apple Weather, Google Weather) теж їх не мають.
+            Якщо колись захочеться візуальної підказки про свайп —
+            краще додати dot-pagination внизу екрану, не повертати стрілки.
+
+            adjustsFontSizeToFit + minimumFontScale={0.75} — автоматично
+            зменшує шрифт назви якщо вона не влазить (для довгих слів типу
+            "Хмельницький" на вузьких пристроях). Для коротких ("Київ")
+            фіча мовчить, рендериться base size. */}
         <Text
           style={styles.name}
           numberOfLines={1}
@@ -86,11 +73,6 @@ export default function CityHeader({
         >
           {displayName} {isDefault && <Text style={styles.pin}>📍</Text>}
         </Text>
-        {showArrows && (
-          <TouchableOpacity onPress={handleNext} hitSlop={12}>
-            <Text style={styles.arrow}>›</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       <View style={[styles.side, showRefreshButton && styles.sideWide, styles.right]}>
@@ -143,16 +125,13 @@ const createStyles = (colors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
-      // paddingHorizontal — гарантоване "повітря" між group (стрілки+назва)
-      // і бічними слотами. Без нього при довгій назві стрілка › наближалася
-      // впритул до кнопки ↻ на Android (вони візуально зливалися).
-      // Бонус: довгі назви активують adjustsFontSizeToFit раніше — auto-shrink
-      // спрацьовує плавніше.
+      // paddingHorizontal — гарантоване "повітря" між назвою і бічними
+      // слотами. Бонус: довгі назви активують adjustsFontSizeToFit раніше
+      // (бо доступна ширина для тексту менша) — auto-shrink спрацьовує плавніше.
       paddingHorizontal: 12,
     },
-    // Стиль для emoji-іконок (⚙️ і подібних). color НЕ задаємо —
-    // emoji мають власні кольори.
+    // Стиль для emoji-іконок (⚙️). color НЕ задаємо — emoji мають
+    // власні кольори.
     icon: { fontSize: scaleFont(20) },
     // Стиль для текстових символів-іконок (↻). ОБОВ'ЯЗКОВО color
     // прив'язаний до теми, інакше на Android буде дефолтний чорний
@@ -161,12 +140,6 @@ const createStyles = (colors) =>
       fontSize: scaleFont(20),
       color: colors.text,
       fontFamily: fonts.bold,
-    },
-    arrow: {
-      fontSize: scaleFont(28),
-      color: colors.text,
-      fontFamily: fonts.bold,
-      paddingHorizontal: 8,
     },
     name: {
       fontSize: scaleFont(20),

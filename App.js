@@ -346,9 +346,6 @@ function WeatherAppInner({ cm, weatherInitial, forecastInitial }) {
             city={displayedCity}
             language={cm.language}
             isDefault={isDefault}
-            showArrows={!isSingleCity}
-            onPrevious={cm.goToPrevious}
-            onNext={cm.goToNext}
             onSettings={() => setShowSettings(true)}
             // ⬇️ Refresh-стан + колбек. На Android CityHeader рендерить
             // кнопку ↻ (умова всередині), на iOS просто ігнорує (бо там
