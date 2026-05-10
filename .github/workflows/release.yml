@@ -1,0 +1,55 @@
+# 🏷️ Auto Release Draft — створює DRAFT GitHub Release коли пушиш тег vX.Y.Z
+#
+# Як використовувати:
+#   1. Зробити еas build --profile production --platform android (як зазвичай)
+#   2. Скачати APK з EAS dashboard
+#   3. git tag -a v1.0.1 -m "v1.0.1"
+#   4. git push origin v1.0.1     ← цей push тригерить Action
+#   5. Зайти на github.com/.../releases — побачиш DRAFT з auto-generated notes
+#   6. Drag-and-drop APK у Assets, відредагувати notes якщо треба, натиснути Publish
+#
+# Чому DRAFT а не одразу публікація:
+#   - Можна ревью auto-notes перед публікацією
+#   - Треба прикріпити APK вручну (бо ми не білдимо в CI — економимо EAS-кредити)
+#   - Менше ризик випадкової публікації з зламаним білдом
+
+name: Release Draft
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # тригер тільки на семантичні теги: v1.0.0, v1.2.3, v2.0.0-beta1 тощо
+
+permissions:
+  contents: write  # треба щоб action міг створити Release
+
+jobs:
+  create-release-draft:
+    name: Create Release Draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # потрібна повна історія, щоб auto-notes бачили всі коміти між тегами
+
+      - name: Create GitHub Release Draft
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Weather App ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: true                    # створюємо як чернетку (треба руками опублікувати)
+          generate_release_notes: true   # GitHub сам пише список commits/PRs між тегами
+          body: |
+            ## 📦 Download
+
+            Прикріпи `weather-app-${{ github.ref_name }}-arm64.apk` сюди (з EAS dashboard).
+
+            **System requirements:** Android 7.0+ (arm64-v8a)
+            **APK size:** ~52 MB
+
+            ---
+
+            ## What's Changed
+
+            (Список нижче згенерує GitHub автоматично)
