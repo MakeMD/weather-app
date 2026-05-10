@@ -144,6 +144,12 @@ const createStyles = (colors) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
+      // paddingHorizontal — гарантоване "повітря" між group (стрілки+назва)
+      // і бічними слотами. Без нього при довгій назві стрілка › наближалася
+      // впритул до кнопки ↻ на Android (вони візуально зливалися).
+      // Бонус: довгі назви активують adjustsFontSizeToFit раніше — auto-shrink
+      // спрацьовує плавніше.
+      paddingHorizontal: 12,
     },
     // Стиль для emoji-іконок (⚙️ і подібних). color НЕ задаємо —
     // emoji мають власні кольори.
